@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::entities::Pos;
-use crate::mapgen::{Level, Room, RoomKind, Tile};
+use crate::mapgen::{fnv1a64, Level, Room, RoomKind, Tile};
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -89,4 +89,76 @@ pub fn arena(w: i32, h: i32) -> Level {
         portals: vec![],
         seed: 1,
     }
+}
+
+/// A complete, sorted description of everything under `root` (the root
+/// included): kind, size, permissions, mtime, content hash, symlink target.
+/// Two snapshots are equal only if nothing was created, removed, renamed,
+/// rewritten, `touch`ed or re-permissioned in between.
+pub fn snapshot(root: &Path) -> Vec<String> {
+    fn describe(root: &Path, path: &Path, out: &mut Vec<String>) {
+        use std::os::unix::fs::PermissionsExt;
+        let md = fs::symlink_metadata(path).expect("stat");
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        let mtime = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_nanos());
+        let ft = md.file_type();
+        let detail = if ft.is_symlink() {
+            format!("link->{}", fs::read_link(path).expect("readlink").display())
+        } else if ft.is_dir() {
+            "dir".to_string()
+        } else {
+            format!("file:{:016x}", fnv1a64(&fs::read(path).expect("read")))
+        };
+        out.push(format!(
+            "{rel}|{detail}|size={}|mode={:o}|mtime={mtime}",
+            md.len(),
+            md.permissions().mode()
+        ));
+        if ft.is_dir() && !ft.is_symlink() {
+            let mut children: Vec<_> = fs::read_dir(path)
+                .expect("read_dir")
+                .map(|e| e.expect("entry").path())
+                .collect();
+            children.sort();
+            for child in children {
+                describe(root, &child, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    describe(root, root, &mut out);
+    out
+}
+
+/// A directory shaped like a small real project: nested dirs, a gitignore,
+/// a `.git`, ignored dirs/files, a symlink and a few differently sized files.
+pub fn sample_project() -> TempDir {
+    let tmp = TempDir::new();
+    tmp.file(".gitignore", b"target/\n*.log\n.env\n")
+        .file(".git/HEAD", b"ref: refs/heads/main\n")
+        .file(".git/objects/aa/bb", b"object")
+        .file("src/main.rs", &vec![b'x'; 5000])
+        .file("src/lib.rs", b"pub fn f() {}")
+        .file("src/util/mod.py", b"print(1)")
+        .file("docs/README.md", b"# hi")
+        .file("docs/notes.txt", &vec![b'n'; 3000])
+        .file("assets/logo.png", &vec![0u8; 20_000])
+        .file("assets/bundle.tar.gz", &vec![1u8; 300_000])
+        .file("config/app.toml", b"a = 1")
+        .file("config/app.json", b"{}")
+        .file("target/debug/app", &vec![7u8; 2_000_000])
+        .file(".env", b"SECRET=1")
+        .file("run.log", b"log")
+        .file("Makefile", b"all:");
+    std::os::unix::fs::symlink(tmp.path().join("docs"), tmp.path().join("docs_link"))
+        .expect("symlink");
+    tmp
 }

@@ -121,3 +121,14 @@ Running log of what was built, in order, and the decisions taken along the way.
   secret doors (a built-in connectivity check).
 - 15 UI/input tests via ratatui's `TestBackend` (screen contents, colours, mimic/secret-door disguise, fog, overlay, end screens,
   tiny terminal, key bindings, Ctrl-C, inventory-letter collisions, camera). `cargo clippy --all-targets -- -D warnings` clean.
+
+## Stage 7a — read-only guarantee tests
+
+- `testutil::snapshot` describes everything under a directory (kind, size, permissions, **mtime**, content hash, symlink
+  target); two snapshots are equal only if nothing was created, removed, rewritten, touched or re-permissioned.
+- `scanning_never_writes` (scan on a realistic project incl. `.git`, ignored dirs/files, a symlink) and
+  `a_whole_session_never_writes_to_the_filesystem` (scan → generate → 400 turns of random movement, searching, item use and
+  forced fights with a god-mode player) both compare snapshots before/after.
+- **Mutation-checked:** temporarily making `scan` (A) create a file and (B) rewrite a file with identical bytes made both
+  tests fail; reverted afterwards. A test that cannot fail would prove nothing.
+- Also: missing path / path-is-a-file are clean error messages, not panics.

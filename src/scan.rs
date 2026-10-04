@@ -446,4 +446,15 @@ mod tests {
         sorted.sort();
         assert_eq!(root_files, sorted);
     }
+
+    #[test]
+    fn scanning_never_writes() {
+        let tmp = crate::testutil::sample_project();
+        let before = crate::testutil::snapshot(tmp.path());
+        assert!(before.len() > 20, "the sample project has real content");
+        let tree = scan(tmp.path());
+        assert!(tree.entry_count() > 20, "and it was really scanned");
+        let after = crate::testutil::snapshot(tmp.path());
+        assert_eq!(before, after);
+    }
 }

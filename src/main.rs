@@ -177,3 +177,64 @@ fn dump(root: &Path, seed: u64, tree: &scan::Tree, level: &mapgen::Level) -> Res
         _ => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::Pos;
+    use crate::game::Action;
+    use crate::testutil::{sample_project, snapshot};
+    use rand::{RngExt, SeedableRng};
+    use rand_chacha::ChaCha8Rng;
+
+    /// Scan, generate, then play hundreds of turns of fighting and looting:
+    /// the directory must come out byte-for-byte, mtime-for-mtime unchanged.
+    #[test]
+    fn a_whole_session_never_writes_to_the_filesystem() {
+        let tmp = sample_project();
+        let before = snapshot(tmp.path());
+
+        let root = tmp.path().canonicalize().expect("canonical");
+        let tree = scan::scan(&root);
+        let level = mapgen::build_level(&tree, mapgen::seed_for_path(&root));
+        let mut game = Game::new(level, SystemTime::now());
+        game.player.atk = 500; // kill everything we bump into: maximum "destruction"
+        game.player.max_hp = 100_000;
+        game.player.hp = 100_000;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(5);
+        for _ in 0..400 {
+            let action = match rng.random_range(0..10) {
+                0 => Action::Search,
+                1 => Action::Wait,
+                2 if !game.player.inventory.is_empty() => Action::Use(0),
+                _ => Action::Move(rng.random_range(-1..=1), rng.random_range(-1..=1)),
+            };
+            game.act(action);
+            // Teleport next to a random monster now and then so fights really happen.
+            if rng.random_bool(0.1) {
+                if let Some(m) = game.monsters.first() {
+                    game.player.pos = Pos::new(m.pos.x + 1, m.pos.y);
+                }
+            }
+        }
+        assert!(game.summary().turns > 100, "a real session happened");
+        assert_eq!(snapshot(tmp.path()), before);
+    }
+
+    #[test]
+    fn missing_paths_and_files_are_clean_errors_not_panics() {
+        let cli = |path: &str| Cli {
+            path: Some(PathBuf::from(path)),
+            seed: None,
+            no_color: true,
+            dump: true,
+        };
+        let err = run(&cli("/definitely/not/a/real/path")).expect_err("must fail");
+        assert!(err.contains("cannot open"), "{err}");
+        let tmp = sample_project();
+        let file = tmp.path().join("src/main.rs");
+        let err = run(&cli(&file.display().to_string())).expect_err("must fail");
+        assert!(err.contains("not a directory"), "{err}");
+    }
+}
