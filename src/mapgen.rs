@@ -23,7 +23,7 @@ const GAP_Y: i32 = 3;
 const MAX_ROOM_W: i32 = 30;
 const MAX_ROOM_H: i32 = 13;
 /// Tiles of floor per monster, at most (keeps rooms from being packed solid).
-const AREA_PER_MONSTER: i32 = 6;
+const AREA_PER_MONSTER: i32 = 10;
 /// Marker in `room_map` for tiles that belong to no room.
 pub const NO_ROOM: u32 = u32::MAX;
 
@@ -530,8 +530,21 @@ pub fn build_level(tree: &Tree, seed: u64) -> Level {
     }
 
     // --- start and stairs --------------------------------------------------
-    let root_tiles: Vec<Pos> = level.rooms[0].tiles().collect();
-    level.start = root_tiles[rng.random_range(0..root_tiles.len())];
+    // Start just inside the root room's first doorway, so a corridor to fight
+    // in is one step away when the hunters close in. A lone room has no doors.
+    level.start = match first_door(&level, 0) {
+        Some(door) => {
+            let room = &level.rooms[0];
+            Pos::new(
+                door.x.clamp(room.x, room.x + room.w - 1),
+                door.y.clamp(room.y, room.y + room.h - 1),
+            )
+        }
+        None => {
+            let root_tiles: Vec<Pos> = level.rooms[0].tiles().collect();
+            root_tiles[rng.random_range(0..root_tiles.len())]
+        }
+    };
 
     // The exit lives in the deepest room you can reach without secrets.
     let exit_room = level
@@ -554,7 +567,7 @@ pub fn build_level(tree: &Tree, seed: u64) -> Level {
         let mut free: Vec<Pos> = room
             .tiles()
             .filter(|&p| p != level.start && p != level.stairs)
-            .filter(|&p| id != 0 || p.dist(level.start) > 2)
+            .filter(|&p| id != 0 || p.dist(level.start) > 3)
             .collect();
         shuffle(&mut free, &mut rng);
 
@@ -625,6 +638,14 @@ pub fn build_level(tree: &Tree, seed: u64) -> Level {
     }
 
     level
+}
+
+/// The first doorway (row-major) in a room's wall ring.
+fn first_door(level: &Level, room: usize) -> Option<Pos> {
+    let (ox, oy, ow, oh) = level.rooms[room].outer();
+    (oy..oy + oh)
+        .flat_map(|y| (ox..ox + ow).map(move |x| Pos::new(x, y)))
+        .find(|&p| level.tile(p) == Tile::Door)
 }
 
 /// Is `p` within one step of a door or secret door?
@@ -876,7 +897,7 @@ mod tests {
                 assert!(seen.insert(sp.pos), "two monsters share {:?}", sp.pos);
                 assert_ne!(sp.pos, level.start);
                 assert_ne!(sp.pos, level.stairs);
-                assert!(room != 0 || sp.pos.dist(level.start) > 2);
+                assert!(room != 0 || sp.pos.dist(level.start) > 3);
                 assert_eq!(sp.hidden, level.rooms[room].hidden);
             }
         }

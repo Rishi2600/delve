@@ -555,7 +555,7 @@ mod tests {
         let t = text(&rows);
         assert!(t.contains('@'), "the player");
         assert!(t.contains("HP "), "status bar");
-        assert!(t.contains("40/40"));
+        assert!(t.contains("50/50"));
         assert!(t.contains("Lv 1"));
         assert!(t.contains("/arena"), "the real path of the room");
         assert!(t.contains("You enter arena"), "message log");

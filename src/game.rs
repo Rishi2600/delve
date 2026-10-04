@@ -16,14 +16,17 @@ use crate::mapgen::{Level, RoomKind, Tile};
 
 /// How far you can see outside a lit room.
 pub const VIEW_RADIUS: i32 = 9;
-/// Hunting monsters track you along walkable paths up to this long.
-const HUNT_RANGE: u16 = 30;
+/// Hunting monsters track you along walkable paths up to this long, so only
+/// the room you are in (and its neighbours) comes for you, not the whole map.
+const HUNT_RANGE: u16 = 16;
 /// Monsters farther than this (in tiles) from you are frozen, to keep turns cheap.
 const ACTIVE_RANGE: i32 = 40;
 /// Sleeping monsters wake when you come this close.
 const WAKE_RANGE: i32 = 3;
 /// Idle monsters start hunting when you come this close.
 const NOTICE_RANGE: i32 = 7;
+/// One hit point comes back every this many turns.
+const REGEN_TURNS: u32 = 4;
 const MAX_LOG: usize = 500;
 const DIRS: [(i32, i32); 8] = [
     (0, -1),
@@ -231,6 +234,9 @@ impl Game {
             if self.can_strike(from, to) {
                 self.player_attack(i);
                 return true;
+            }
+            if !self.monsters[i].disguised {
+                self.log("You can't reach it around the corner.");
             }
             return false;
         }
@@ -474,7 +480,7 @@ impl Game {
         self.turn += 1;
         self.monster_phase();
         if self.outcome == Outcome::Playing
-            && self.turn.is_multiple_of(8)
+            && self.turn.is_multiple_of(REGEN_TURNS)
             && self.player.hp < self.player.max_hp
         {
             self.player.hp += 1;
@@ -533,8 +539,14 @@ impl Game {
                 Speed::Slow => u32::from(m.ticks.is_multiple_of(2)),
             };
             m.ticks = m.ticks.wrapping_add(1);
-            for _ in 0..actions {
+            for action in 0..actions {
                 if self.outcome != Outcome::Playing {
+                    break;
+                }
+                // A fast monster's bonus action is for closing in, not for a
+                // second blow: speed means movement, not double damage.
+                let pos = self.monsters[i].pos;
+                if action > 0 && self.can_strike(pos, self.player.pos) {
                     break;
                 }
                 self.monster_act(i, &mut occupied);
@@ -1005,17 +1017,17 @@ mod tests {
     fn speed_classes_cover_different_ground() {
         let travelled = |name: &str| {
             let mut g = game(60, 6);
-            g.player.pos = Pos::new(20, 2);
+            g.player.pos = Pos::new(2, 2);
             g.monsters
-                .push(monster(name, 10, Pos::new(50, 2), MonsterState::Hunting));
-            wait(&mut g, 8);
-            50 - g.monsters[0].pos.x
+                .push(monster(name, 10, Pos::new(18, 2), MonsterState::Hunting));
+            wait(&mut g, 5);
+            18 - g.monsters[0].pos.x
         };
         let (snake, slime, golem) = (travelled("a.py"), travelled("a.xyz"), travelled("a.json"));
         assert!(snake > slime && slime > golem, "{snake} {slime} {golem}");
-        assert_eq!(slime, 8);
-        assert_eq!(snake, 16);
-        assert_eq!(golem, 4);
+        assert_eq!(slime, 5);
+        assert_eq!(snake, 10);
+        assert_eq!(golem, 3);
     }
 
     #[test]
@@ -1084,7 +1096,10 @@ mod tests {
         assert_eq!(g.player.hp, 25);
         g.act(Action::Use(0));
         g.act(Action::Use(0));
-        assert_eq!((g.player.total_atk(), g.player.total_def()), (7, 2));
+        assert_eq!(
+            (g.player.total_atk(), g.player.total_def()),
+            (g.player.atk + 3, 2)
+        );
         assert!(g.player.inventory.is_empty());
         g.act(Action::Use(9));
     }

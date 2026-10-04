@@ -218,12 +218,12 @@ impl SizeTier {
     /// Base (hp, attack, xp) for the tier.
     fn base(self) -> (i32, i32, u32) {
         match self {
-            SizeTier::Rat => (4, 1, 3),
-            SizeTier::Small => (8, 2, 6),
-            SizeTier::Medium => (16, 3, 12),
-            SizeTier::Large => (28, 5, 25),
-            SizeTier::Huge => (48, 8, 55),
-            SizeTier::Boss => (100, 13, 150),
+            SizeTier::Rat => (3, 1, 4),
+            SizeTier::Small => (6, 1, 8),
+            SizeTier::Medium => (11, 2, 14),
+            SizeTier::Large => (18, 3, 26),
+            SizeTier::Huge => (30, 5, 50),
+            SizeTier::Boss => (70, 9, 140),
         }
     }
 }
@@ -420,13 +420,13 @@ impl ItemKind {
 /// tier (and secret rooms), improving the item's power.
 pub fn roll_item<R: Rng + ?Sized>(file_name: &str, quality: i32, rng: &mut R) -> Item {
     let kind = match rng.random_range(0..100) {
-        0..=39 => ItemKind::Potion,
-        40..=59 => ItemKind::Scroll,
-        60..=79 => ItemKind::Weapon,
+        0..=49 => ItemKind::Potion,
+        50..=64 => ItemKind::Scroll,
+        65..=82 => ItemKind::Weapon,
         _ => ItemKind::Armor,
     };
     let power = match kind {
-        ItemKind::Potion => 6 + 4 * quality,
+        ItemKind::Potion => 8 + 4 * quality,
         ItemKind::Scroll => 0,
         ItemKind::Weapon => 1 + quality / 2,
         ItemKind::Armor => 1 + quality / 3,
@@ -497,9 +497,9 @@ impl Player {
     pub fn new(pos: Pos) -> Player {
         Player {
             pos,
-            hp: 40,
-            max_hp: 40,
-            atk: 4,
+            hp: 50,
+            max_hp: 50,
+            atk: 5,
             def: 0,
             level: 1,
             xp: 0,
@@ -528,8 +528,8 @@ impl Player {
         let mut gained = 0;
         while self.xp >= self.xp_for_next() {
             self.level += 1;
-            self.max_hp += 8;
-            self.hp = (self.hp + 8).min(self.max_hp);
+            self.max_hp += 10;
+            self.hp = self.max_hp;
             self.atk += 1;
             if self.level.is_multiple_of(3) {
                 self.def += 1;
@@ -607,7 +607,8 @@ mod tests {
         for pair in tiers.windows(2) {
             let a = monster_stats(Class::Slime, pair[0], false);
             let b = monster_stats(Class::Slime, pair[1], false);
-            assert!(b.hp > a.hp && b.atk > a.atk && b.xp > a.xp);
+            assert!(b.hp > a.hp && b.atk >= a.atk && b.xp > a.xp);
+            assert!(b.hp * b.atk > a.hp * a.atk, "overall threat grows");
         }
     }
 
@@ -697,7 +698,7 @@ mod tests {
         assert_eq!(p.level, 1);
         assert_eq!(p.gain_xp(1), 1);
         assert_eq!(p.level, 2);
-        assert!(p.max_hp > 40 && p.atk > 4);
+        assert!(p.max_hp > 50 && p.atk > 5);
         // A huge windfall can grant several levels at once.
         let before = p.level;
         assert!(p.gain_xp(1000) >= 2);
@@ -717,7 +718,7 @@ mod tests {
             kind: ItemKind::Armor,
             power: 2,
         });
-        assert_eq!(p.total_atk(), 7);
+        assert_eq!(p.total_atk(), p.atk + 3);
         assert_eq!(p.total_def(), 2);
     }
 }

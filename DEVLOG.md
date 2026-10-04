@@ -132,3 +132,31 @@ Running log of what was built, in order, and the decisions taken along the way.
 - **Mutation-checked:** temporarily making `scan` (A) create a file and (B) rewrite a file with identical bytes made both
   tests fail; reverted afterwards. A test that cannot fail would prove nothing.
 - Also: missing path / path-is-a-file are clean error messages, not panics.
+
+## Stage 7b — balance pass (found by simulation, not by guessing)
+
+A throwaway bot (walks to the stairs, fights what blocks it, drinks potions below 45% HP, equips gear) played hundreds of
+seeded games on synthetic projects. First result on a busy project where **every file is fresh** — which is exactly what a
+`git clone` produces, and the spec says fresh files hunt — was **0 wins in 200**. Diagnosis from per-death statistics:
+
+1. 50–65% of deaths were in the first 50 turns: the root room's whole population converged at once.
+2. With a 30-step hunting range, every room's monsters hunted through the corridors, sandwiching a player who tried to
+   fight in a corridor.
+3. Fast snakes hit twice per turn (double damage, not just double speed).
+
+Changes (spec mappings untouched — only numbers and one rule):
+- Player: 50 HP / 5 atk (was 40/4); level-up gives +10 max HP, +1 atk and a **full heal**; regeneration 1 HP per 4 turns.
+- Tier table softened (Rat 3 HP/1 atk … Boss 70 HP/9 atk); potions are 50% of loot and heal `8 + 4·quality`.
+- Hunting range 30 → 16 path steps: the current room and its neighbours come for you, not the whole map.
+- A fast monster's bonus action only moves; it never gets a second blow.
+- Rooms hold at most `area/10` monsters (was /6); monsters keep ≥ 4 tiles from the start.
+- **Start position:** just inside the root room's first doorway, so a one-wide corridor to fight in is one step away.
+- UX: bumping a monster you cannot reach around a corner now says so instead of silently doing nothing (found because the
+  bot spun on exactly that).
+
+Result of the same bot (no tactics, no searching), 200 seeds, 128-entry project: **all fresh 12% wins**, 20% fresh / rest 30
+days old 30%, 10% fresh / 30% ancient / rest idle 50%, all idle 37%. Hard in the harshest case, fair otherwise, never
+degenerate. A permanent test (`the_game_stays_winnable_when_every_file_is_fresh`, 100 seeds) guards both directions: at least
+2 escapes and at least 5 deaths. `[profile.test] opt-level = 2` keeps whole-game tests fast (the full suite runs in ~2 s).
+- Probe caveats worth knowing: two "stuck" artefacts turned out to be bot bugs (bumping a portal / a corner-blocked
+  diagonal costs no turn), not game bugs.
