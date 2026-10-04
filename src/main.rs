@@ -5,6 +5,7 @@ use std::process::ExitCode;
 use clap::Parser;
 
 mod entities;
+mod game;
 mod mapgen;
 mod scan;
 #[cfg(test)]

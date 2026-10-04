@@ -71,3 +71,28 @@ Running log of what was built, in order, and the decisions taken along the way.
 - 16 tests: FNV vectors, determinism (synthetic + real dir), BFS reachability over 200 random trees, secret rooms
   reachable *only* through secret doors, no overlap, start/stairs placement, monster placement invariants, size scaling,
   vault/cache/secret classification from a real directory, portals, crowded-room cap.
+
+## Stage 5 — `game.rs`
+
+- `Game::act(Action)`; only time-consuming actions run the monsters' phase (bumping a wall or a portal is free). Actions:
+  move/attack (bump), wait, search, use/equip inventory item, quit. Nothing in this module touches the filesystem.
+- **Combat:** player damage = `atk + weapon + 0..2 − armor` (min 1); monster damage = `atk + 0..1 − defense` (min 1). Kills give
+  XP, a `files_slain` count, a "biggest foe" record (by file size), and drop loot named after the file onto the nearest free
+  floor tile. Diagonal strikes cannot cut solid corners.
+- **Monster AI by class:** snake acts twice per turn, golem every other turn, goblin moves randomly half the time, ghost drifts
+  straight at you through walls, chest-monster and mimic never move (a mimic stays an "item" until you are adjacent, then
+  ambushes). Others follow a bounded BFS distance map (30 steps) around walls; if you are out of reach they mill about.
+  Awake-and-hunting / idle / asleep come from the file's mtime (`entities::initial_state`); sleepers wake within 3 tiles,
+  idle monsters notice you within 7. Monsters more than 40 tiles away are frozen to keep turns cheap.
+- **Search (`s`):** each adjacent secret door is found with chance `min(90, 35 + 10·level)%`.
+- **Items:** potion heals, scroll = magic mapping (reveals everything reachable *without* secrets, so hidden rooms stay hidden),
+  blade/mail equip and swap. Pack holds 26 items.
+- **Fog of war / LOS:** rooms are lit — standing inside one shows the whole room — and everything else uses Bresenham line of
+  sight out to radius 9. `seen` persists, `visible` is per turn. Secret doors are opaque, like walls.
+- **Summary** for the end screen: rooms explored, files slain, biggest foe, real path of the final room, killer, secrets, turns.
+  Reaching the stairs → `Escaped`. Light HP regeneration (1 per 8 turns).
+- 24 tests on a hand-built arena level: movement/corners, combat/loot/stats, chests, pickup, search (adjacent-only, level scaling),
+  waking, hunting, pathing around walls, ghosts through walls, exact speed classes (snake 16 / slime 8 / golem 4 tiles in 8 turns),
+  mimics, death + real path, potions/gear, fog memory, LOS, scroll mapping, stairs, portals, quit, determinism.
+- Test-writing lesson: a single huge lit room marks everything seen, which made three fog/scroll tests vacuous at first;
+  they now use a deliberately tiny "lit room" so only line of sight applies.
