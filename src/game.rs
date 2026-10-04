@@ -158,13 +158,6 @@ impl Game {
         self.monsters.iter().position(|m| m.pos == p)
     }
 
-    pub fn item_at(&self, p: Pos) -> Option<&Item> {
-        self.floor_items
-            .iter()
-            .find(|(q, _)| *q == p)
-            .map(|(_, item)| item)
-    }
-
     pub fn portal_at(&self, p: Pos) -> Option<&str> {
         self.level
             .portals
@@ -181,10 +174,6 @@ impl Game {
     /// The real filesystem path of the current room.
     pub fn current_path(&self) -> &Path {
         &self.level.rooms[self.current_room].path
-    }
-
-    pub fn current_room_kind(&self) -> RoomKind {
-        self.level.rooms[self.current_room].kind
     }
 
     pub fn summary(&self) -> Summary {
@@ -296,7 +285,8 @@ impl Game {
         m.hp -= dmg;
         let label = m.label();
         if m.hp > 0 {
-            self.log(format!("You hit the {label} for {dmg}."));
+            let (hp, max) = (m.hp, m.max_hp);
+            self.log(format!("You hit the {label} for {dmg} ({hp}/{max} left)."));
             return;
         }
         self.log(format!("You slay the {label}!"));
@@ -460,7 +450,10 @@ impl Game {
         self.rooms_visited[r] = true;
         let room = &self.level.rooms[r];
         let msg = match room.kind {
-            RoomKind::Vault => format!("You step into the vault of {}: treasure glitters!", room.name),
+            RoomKind::Vault => format!(
+                "You step into the vault of {}: treasure glitters!",
+                room.name
+            ),
             RoomKind::Sealed => format!(
                 "The door of '{}' is sealed (permission denied). Nothing stirs within.",
                 room.name
@@ -470,7 +463,7 @@ impl Game {
                 "A hidden chamber: {}! Its denizens look tougher.",
                 room.name
             ),
-            RoomKind::Normal => format!("You enter {} ({}).", room.name, room.path.display()),
+            RoomKind::Normal => format!("You enter {} ({} entries).", room.name, room.entries),
         };
         self.log(msg);
     }
@@ -480,7 +473,9 @@ impl Game {
     fn end_turn(&mut self) {
         self.turn += 1;
         self.monster_phase();
-        if self.outcome == Outcome::Playing && self.turn % 8 == 0 && self.player.hp < self.player.max_hp
+        if self.outcome == Outcome::Playing
+            && self.turn.is_multiple_of(8)
+            && self.player.hp < self.player.max_hp
         {
             self.player.hp += 1;
         }
@@ -535,7 +530,7 @@ impl Game {
             let actions = match m.class.speed() {
                 Speed::Fast => 2,
                 Speed::Normal => 1,
-                Speed::Slow => u32::from(m.ticks % 2 == 0),
+                Speed::Slow => u32::from(m.ticks.is_multiple_of(2)),
             };
             m.ticks = m.ticks.wrapping_add(1);
             for _ in 0..actions {
@@ -764,48 +759,7 @@ impl Game {
 mod tests {
     use super::*;
     use crate::entities::{FileInfo, Spawn};
-    use crate::mapgen::Room;
-
-    /// A walled, empty, rectangular room: interior (1,1)..(w-2,h-2).
-    fn arena(w: i32, h: i32) -> Level {
-        let mut tiles = vec![Tile::Floor; (w * h) as usize];
-        for y in 0..h {
-            for x in 0..w {
-                if x == 0 || y == 0 || x == w - 1 || y == h - 1 {
-                    tiles[(y * w + x) as usize] = Tile::Wall;
-                }
-            }
-        }
-        let stairs = Pos::new(w - 2, h - 2);
-        tiles[(stairs.y * w + stairs.x) as usize] = Tile::Stairs;
-        Level {
-            width: w,
-            height: h,
-            tiles,
-            room_map: vec![0; (w * h) as usize],
-            rooms: vec![Room {
-                id: 0,
-                kind: RoomKind::Normal,
-                name: "arena".into(),
-                path: PathBuf::from("/arena"),
-                x: 1,
-                y: 1,
-                w: w - 2,
-                h: h - 2,
-                depth: 0,
-                hidden: false,
-                secret_entry: false,
-                parent: None,
-                entries: 0,
-            }],
-            start: Pos::new(2, 2),
-            stairs,
-            spawns: vec![],
-            items: vec![],
-            portals: vec![],
-            seed: 1,
-        }
-    }
+    use crate::testutil::arena;
 
     fn game(w: i32, h: i32) -> Game {
         Game::new(arena(w, h), SystemTime::now())
@@ -816,12 +770,10 @@ mod tests {
             pos,
             file: FileInfo {
                 name: name.into(),
-                path: PathBuf::from("/arena").join(name),
                 size,
                 modified: None,
             },
             hidden: false,
-            room: 0,
         };
         let mut m = Monster::from_spawn(&spawn, SystemTime::now());
         m.state = state;
@@ -871,8 +823,12 @@ mod tests {
     #[test]
     fn combat_kills_awards_xp_drops_named_loot_and_tracks_stats() {
         let mut g = game(30, 12);
-        g.monsters
-            .push(monster("README.md", 900, Pos::new(3, 2), MonsterState::Asleep));
+        g.monsters.push(monster(
+            "README.md",
+            900,
+            Pos::new(3, 2),
+            MonsterState::Asleep,
+        ));
         g.player.atk = 100;
         g.act(Action::Move(1, 0));
         assert!(g.monsters.is_empty(), "one big hit slays a rat");
@@ -882,7 +838,10 @@ mod tests {
         assert_eq!(s.biggest_foe, Some(("README.md".to_string(), 900)));
         assert!(g.messages.iter().any(|m| m.contains("You slay")));
         // Chests aside, loot (if any) is named after the file.
-        assert!(g.floor_items.iter().all(|(_, i)| i.name.ends_with(" of README.md")));
+        assert!(g
+            .floor_items
+            .iter()
+            .all(|(_, i)| i.name.ends_with(" of README.md")));
     }
 
     #[test]
@@ -903,8 +862,12 @@ mod tests {
     #[test]
     fn chest_monsters_drop_a_lot() {
         let mut g = game(30, 12);
-        g.monsters
-            .push(monster("backup.tar.gz", 10, Pos::new(3, 2), MonsterState::Asleep));
+        g.monsters.push(monster(
+            "backup.tar.gz",
+            10,
+            Pos::new(3, 2),
+            MonsterState::Asleep,
+        ));
         g.player.atk = 1000;
         g.act(Action::Move(1, 0));
         assert!(g.floor_items.len() >= 3);
@@ -978,8 +941,12 @@ mod tests {
     #[test]
     fn hunters_close_in_and_attack() {
         let mut g = game(40, 12);
-        g.monsters
-            .push(monster("fresh.txt", 10, Pos::new(12, 2), MonsterState::Hunting));
+        g.monsters.push(monster(
+            "fresh.txt",
+            10,
+            Pos::new(12, 2),
+            MonsterState::Hunting,
+        ));
         let hp = g.player.hp;
         wait(&mut g, 14);
         assert!(g.player.hp < hp, "the hunter reached and hit us");
@@ -992,8 +959,12 @@ mod tests {
         for y in 1..9 {
             set_wall(&mut g, Pos::new(6, y)); // wall with a gap at the bottom
         }
-        g.monsters
-            .push(monster("fresh.js", 5000, Pos::new(10, 2), MonsterState::Hunting));
+        g.monsters.push(monster(
+            "fresh.js",
+            5000,
+            Pos::new(10, 2),
+            MonsterState::Hunting,
+        ));
         g.monsters[0].class = Class::Slime;
         let hp = g.player.hp;
         wait(&mut g, 40);
@@ -1006,8 +977,12 @@ mod tests {
         for y in 1..11 {
             set_wall(&mut g, Pos::new(6, y)); // a solid wall, no gap
         }
-        g.monsters
-            .push(monster("ghost.md", 10, Pos::new(10, 2), MonsterState::Hunting));
+        g.monsters.push(monster(
+            "ghost.md",
+            10,
+            Pos::new(10, 2),
+            MonsterState::Hunting,
+        ));
         let hp = g.player.hp;
         wait(&mut g, 15);
         assert!(g.player.hp < hp, "the ghost drifted through the wall");
@@ -1016,8 +991,12 @@ mod tests {
         for y in 1..11 {
             set_wall(&mut g, Pos::new(6, y));
         }
-        g.monsters
-            .push(monster("solid.rs", 10, Pos::new(10, 2), MonsterState::Hunting));
+        g.monsters.push(monster(
+            "solid.rs",
+            10,
+            Pos::new(10, 2),
+            MonsterState::Hunting,
+        ));
         wait(&mut g, 15);
         assert_eq!(g.player.hp, g.player.max_hp, "a crab cannot");
     }
@@ -1042,8 +1021,12 @@ mod tests {
     #[test]
     fn mimics_stay_disguised_until_you_are_adjacent() {
         let mut g = game(40, 12);
-        g.monsters
-            .push(monster("logo.png", 100, Pos::new(8, 2), MonsterState::Hunting));
+        g.monsters.push(monster(
+            "logo.png",
+            100,
+            Pos::new(8, 2),
+            MonsterState::Hunting,
+        ));
         assert!(g.monsters[0].disguised);
         wait(&mut g, 5);
         assert!(g.monsters[0].disguised);
@@ -1052,15 +1035,22 @@ mod tests {
             g.act(Action::Move(1, 0));
         }
         assert!(!g.monsters.is_empty());
-        assert!(!g.monsters[0].disguised, "revealed once we stood next to it");
+        assert!(
+            !g.monsters[0].disguised,
+            "revealed once we stood next to it"
+        );
     }
 
     #[test]
     fn death_ends_the_game_and_reports_the_real_path() {
         let mut g = game(30, 12);
         g.player.hp = 1;
-        g.monsters
-            .push(monster("boss.rs", 50_000_000, Pos::new(3, 2), MonsterState::Hunting));
+        g.monsters.push(monster(
+            "boss.rs",
+            50_000_000,
+            Pos::new(3, 2),
+            MonsterState::Hunting,
+        ));
         g.act(Action::Wait);
         assert_eq!(g.outcome, Outcome::Dead);
         let s = g.summary();
@@ -1144,7 +1134,10 @@ mod tests {
         });
         g.act(Action::Use(0));
         assert!(g.is_seen(Pos::new(55, 9)), "far floor is mapped");
-        assert!(g.is_seen(Pos::new(30, 5)), "the secret door looks like wall");
+        assert!(
+            g.is_seen(Pos::new(30, 5)),
+            "the secret door looks like wall"
+        );
         assert_eq!(g.level.tile(Pos::new(30, 5)), Tile::SecretDoor);
     }
 
@@ -1164,7 +1157,6 @@ mod tests {
         g.level.portals.push(crate::mapgen::Portal {
             pos: Pos::new(3, 2),
             name: "link".into(),
-            room: 0,
         });
         g.portal_set.insert(Pos::new(3, 2));
         let turn = g.turn;
@@ -1186,12 +1178,19 @@ mod tests {
             let mut lvl = arena(40, 12);
             lvl.seed = 77;
             let mut g = Game::new(lvl, SystemTime::now());
-            g.monsters
-                .push(monster("a.js", 5000, Pos::new(20, 5), MonsterState::Hunting));
+            g.monsters.push(monster(
+                "a.js",
+                5000,
+                Pos::new(20, 5),
+                MonsterState::Hunting,
+            ));
             g.monsters
                 .push(monster("b.xyz", 90, Pos::new(25, 8), MonsterState::Hunting));
             wait(&mut g, 30);
-            (g.player.hp, g.monsters.iter().map(|m| m.pos).collect::<Vec<_>>())
+            (
+                g.player.hp,
+                g.monsters.iter().map(|m| m.pos).collect::<Vec<_>>(),
+            )
         };
         assert_eq!(run(), run());
     }

@@ -96,3 +96,28 @@ Running log of what was built, in order, and the decisions taken along the way.
   mimics, death + real path, potions/gear, fog memory, LOS, scroll mapping, stairs, portals, quit, determinism.
 - Test-writing lesson: a single huge lit room marks everything seen, which made three fog/scroll tests vacuous at first;
   they now use a deliberately tiny "lit room" so only line of sight applies.
+
+## Stage 6 — `ui.rs` + terminal loop in `main.rs`
+
+- **Layout:** bordered map (camera follows the player, clamped to the map), a 4-line message log, and a status bar with an HP
+  bar, level, XP, ATK/DEF, turn and — as required — the *real path of the current room* (long paths keep their tail, so the
+  interesting end stays visible); help line on the bottom border.
+- **Rendering rules:** unseen tiles blank, remembered tiles dim, monsters only while in view (sleepers drawn dim, secret-room
+  monsters bold), a disguised mimic draws as a potion `!`, a secret door draws as a plain wall, portals `O` on wall-hugging
+  tiles. `--no-color` (and `NO_COLOR`) drop every colour but keep bold/dim/reverse so the screen stays readable.
+- **Inventory overlay (`i`):** shows wielded/worn gear and lettered items; pressing the letter uses/equips it. Item letters win
+  over the close keys, so the 9th item (`i`) and 17th (`q`) can still be used; `esc`/`enter`/`space` always close.
+- **End screen:** title (died / escaped / walked away), level, rooms explored `x / y`, files slain, **biggest foe defeated**
+  (name + human size), secret doors found, turns, the killer, and the **real path where you died**. The same report is echoed
+  to the normal screen after exit so it stays in scrollback. Quitting with `q` skips the screen and goes straight to the echo.
+- **Terminal safety:** raw mode + alternate screen are always undone — on normal exit, on I/O errors, and by a panic hook that
+  restores the terminal *before* the panic message prints. Verified for real in a pseudo-terminal: raw mode was on while
+  running and off afterwards, the alt screen was left before the message, exit code non-zero (using a temporary panic key,
+  since removed). Also verified a normal session (move, search, inventory, quit) and that a non-TTY stdin/stdout gives a clear
+  error pointing at `--dump` instead of garbage.
+- **Cleanup pass:** removed fields nothing read (`FileInfo.path`, `FileNode.path`, `DirNode.id`, `Room.parent`, `Spawn.room`,
+  `Portal.room`, `Tree.root`) rather than silencing the lint; hit messages now show remaining monster HP; the room-entry message
+  shows the entry count (the path is already in the status bar). `--dump` now also reports how many rooms are open vs behind
+  secret doors (a built-in connectivity check).
+- 15 UI/input tests via ratatui's `TestBackend` (screen contents, colours, mimic/secret-door disguise, fog, overlay, end screens,
+  tiny terminal, key bindings, Ctrl-C, inventory-letter collisions, camera). `cargo clippy --all-targets -- -D warnings` clean.

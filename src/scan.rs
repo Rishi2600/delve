@@ -45,7 +45,6 @@ pub struct Meta {
 #[derive(Debug, Clone)]
 pub struct FileNode {
     pub name: String,
-    pub path: PathBuf,
     pub metadata: Meta,
     /// Matched by gitignore rules (or lives inside an ignored directory).
     pub ignored: bool,
@@ -56,7 +55,6 @@ pub struct FileNode {
 /// A directory in the scanned tree.
 #[derive(Debug, Clone)]
 pub struct DirNode {
-    pub id: usize,
     pub parent: Option<usize>,
     pub name: String,
     pub path: PathBuf,
@@ -73,7 +71,6 @@ pub struct DirNode {
 /// The scanned directory tree. `dirs[0]` is always the root.
 #[derive(Debug, Clone)]
 pub struct Tree {
-    pub root: PathBuf,
     pub dirs: Vec<DirNode>,
     /// True if a cap (entries or per-ignored-dir) cut the scan short.
     pub truncated: bool,
@@ -89,7 +86,6 @@ impl Tree {
 /// Scan `root`. Never fails: an unreadable root becomes a sealed root room.
 pub fn scan(root: &Path) -> Tree {
     let mut tree = Tree {
-        root: root.to_path_buf(),
         dirs: Vec::new(),
         truncated: false,
     };
@@ -99,7 +95,6 @@ pub fn scan(root: &Path) -> Tree {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "/".to_string());
     tree.dirs.push(DirNode {
-        id: 0,
         parent: None,
         name: root_name,
         path: root.to_path_buf(),
@@ -164,7 +159,6 @@ pub fn scan(root: &Path) -> Tree {
                     || (!is_vault && is_ignored(&matchers, &base, &tree, id, &path, true));
                 let new_id = tree.dirs.len();
                 tree.dirs.push(DirNode {
-                    id: new_id,
                     parent: Some(id),
                     name: display,
                     path: path.clone(),
@@ -192,7 +186,6 @@ pub fn scan(root: &Path) -> Tree {
                 let ignored = dir_ignored || is_ignored(&matchers, &base, &tree, id, &path, false);
                 tree.dirs[id].files.push(FileNode {
                     name: display,
-                    path,
                     metadata: if portal { Meta::default() } else { meta },
                     ignored,
                     portal,
@@ -413,7 +406,10 @@ mod tests {
             tmp.file(&format!("node_modules/p{i:03}.js"), b"");
         }
         let t = scan(tmp.path());
-        assert_eq!(find_dir(&t, "node_modules").files.len(), IGNORED_DIR_ENTRY_CAP);
+        assert_eq!(
+            find_dir(&t, "node_modules").files.len(),
+            IGNORED_DIR_ENTRY_CAP
+        );
         assert!(t.truncated);
     }
 

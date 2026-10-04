@@ -1,7 +1,6 @@
 //! Entities: positions, monster classes and size tiers, items and loot,
 //! and the player.
 
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use rand::{Rng, RngExt};
@@ -299,8 +298,6 @@ pub fn initial_state(modified: Option<SystemTime>, now: SystemTime) -> MonsterSt
 #[derive(Debug, Clone)]
 pub struct FileInfo {
     pub name: String,
-    /// The file's real path on disk.
-    pub path: PathBuf,
     pub size: u64,
     pub modified: Option<SystemTime>,
 }
@@ -312,8 +309,6 @@ pub struct Spawn {
     pub file: FileInfo,
     /// Lives in a secret room (ignored entry): tougher, better loot.
     pub hidden: bool,
-    /// Index of the room it spawns in.
-    pub room: usize,
 }
 
 impl Spawn {
@@ -536,7 +531,7 @@ impl Player {
             self.max_hp += 8;
             self.hp = (self.hp + 8).min(self.max_hp);
             self.atk += 1;
-            if self.level % 3 == 0 {
+            if self.level.is_multiple_of(3) {
                 self.def += 1;
             }
             gained += 1;
@@ -681,12 +676,8 @@ mod tests {
             assert!(loot.len() >= 3);
         }
         let mut rng = ChaCha8Rng::seed_from_u64(2);
-        let weak: i32 = (0..200)
-            .map(|_| roll_item("x", 0, &mut rng).power)
-            .sum();
-        let strong: i32 = (0..200)
-            .map(|_| roll_item("x", 6, &mut rng).power)
-            .sum();
+        let weak: i32 = (0..200).map(|_| roll_item("x", 0, &mut rng).power).sum();
+        let strong: i32 = (0..200).map(|_| roll_item("x", 6, &mut rng).power).sum();
         assert!(strong > weak);
     }
 

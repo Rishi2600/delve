@@ -124,7 +124,6 @@ pub struct Room {
     pub hidden: bool,
     /// Entered through a secret door.
     pub secret_entry: bool,
-    pub parent: Option<usize>,
     /// How many entries the directory holds.
     pub entries: usize,
 }
@@ -140,7 +139,8 @@ impl Room {
 
     /// Interior tiles in row-major order.
     pub fn tiles(&self) -> impl Iterator<Item = Pos> + '_ {
-        (self.y..self.y + self.h).flat_map(move |y| (self.x..self.x + self.w).map(move |x| Pos::new(x, y)))
+        (self.y..self.y + self.h)
+            .flat_map(move |y| (self.x..self.x + self.w).map(move |x| Pos::new(x, y)))
     }
 
     /// The outer rectangle including walls: `(x, y, w, h)`.
@@ -154,7 +154,6 @@ impl Room {
 pub struct Portal {
     pub pos: Pos,
     pub name: String,
-    pub room: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -488,7 +487,6 @@ pub fn build_level(tree: &Tree, seed: u64) -> Level {
             depth: spec.depth,
             hidden: spec.hidden,
             secret_entry: spec.secret_entry,
-            parent: spec.parent,
             entries: occupants,
         };
         let floor = if spec.kind == RoomKind::Sealed {
@@ -499,7 +497,8 @@ pub fn build_level(tree: &Tree, seed: u64) -> Level {
         for y in outer_y..outer_y + h + 2 {
             for x in outer_x..outer_x + w + 2 {
                 let p = Pos::new(x, y);
-                let edge = x == outer_x || y == outer_y || x == outer_x + w + 1 || y == outer_y + h + 1;
+                let edge =
+                    x == outer_x || y == outer_y || x == outer_x + w + 1 || y == outer_y + h + 1;
                 level.set_tile(p, if edge { Tile::Wall } else { floor });
                 if let Some(i) = level.index(p) {
                     level.room_map[i] = id as u32;
@@ -598,12 +597,10 @@ pub fn build_level(tree: &Tree, seed: u64) -> Level {
                 pos,
                 file: FileInfo {
                     name: f.name.clone(),
-                    path: f.path.clone(),
                     size: f.metadata.size,
                     modified: f.metadata.modified,
                 },
                 hidden: spec.hidden,
-                room: id,
             });
         }
 
@@ -611,14 +608,18 @@ pub fn build_level(tree: &Tree, seed: u64) -> Level {
         let ring: Vec<Pos> = free
             .iter()
             .copied()
-            .filter(|p| p.x == room.x || p.y == room.y || p.x == room.x + room.w - 1 || p.y == room.y + room.h - 1)
+            .filter(|p| {
+                p.x == room.x
+                    || p.y == room.y
+                    || p.x == room.x + room.w - 1
+                    || p.y == room.y + room.h - 1
+            })
             .filter(|&p| !near_doorway(&level, p))
             .collect();
         for (name, pos) in portal_names.iter().zip(ring.iter().take(ring.len() / 3)) {
             level.portals.push(Portal {
                 pos: *pos,
                 name: (*name).to_string(),
-                room: id,
             });
         }
     }
@@ -644,7 +645,6 @@ mod tests {
     fn synthetic_tree(seed: u64, n_dirs: usize) -> Tree {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut dirs = vec![DirNode {
-            id: 0,
             parent: None,
             name: "root".into(),
             path: PathBuf::from("/synthetic/root"),
@@ -657,8 +657,9 @@ mod tests {
         for id in 1..n_dirs {
             let candidates: Vec<usize> = dirs
                 .iter()
-                .filter(|d| d.kind == DirKind::Normal && d.depth < MAX_DEPTH)
-                .map(|d| d.id)
+                .enumerate()
+                .filter(|(_, d)| d.kind == DirKind::Normal && d.depth < MAX_DEPTH)
+                .map(|(i, _)| i)
                 .collect();
             let parent = candidates[rng.random_range(0..candidates.len())];
             let kind = match rng.random_range(0..100) {
@@ -669,7 +670,6 @@ mod tests {
             let ignored = dirs[parent].ignored || rng.random_bool(0.15);
             let depth = dirs[parent].depth + 1;
             dirs.push(DirNode {
-                id,
                 parent: Some(parent),
                 name: format!("d{id}"),
                 path: PathBuf::from(format!("/synthetic/root/d{id}")),
@@ -700,7 +700,6 @@ mod tests {
                 };
                 let size = 1u64 << rng.random_range(0..26);
                 d.files.push(FileNode {
-                    path: d.path.join(&name),
                     name,
                     metadata: Meta {
                         size,
@@ -712,7 +711,6 @@ mod tests {
             }
         }
         Tree {
-            root: PathBuf::from("/synthetic/root"),
             dirs,
             truncated: false,
         }
@@ -780,7 +778,11 @@ mod tests {
             let reached = level.reachable_rooms(true);
             assert_eq!(reached.len(), level.rooms.len());
             for (room, ok) in level.rooms.iter().zip(&reached) {
-                assert!(*ok, "seed {s}: room {} ({}) unreachable", room.id, room.name);
+                assert!(
+                    *ok,
+                    "seed {s}: room {} ({}) unreachable",
+                    room.id, room.name
+                );
             }
         }
     }
@@ -804,9 +806,17 @@ mod tests {
             let level = build_level(&tree, s);
             let reached = level.reachable_rooms(false);
             for (room, ok) in level.rooms.iter().zip(&reached) {
-                assert_eq!(*ok, !room.hidden, "seed {s}: room {} hidden={}", room.name, room.hidden);
+                assert_eq!(
+                    *ok, !room.hidden,
+                    "seed {s}: room {} hidden={}",
+                    room.name, room.hidden
+                );
             }
-            let secret_doors = level.tiles.iter().filter(|&&t| t == Tile::SecretDoor).count();
+            let secret_doors = level
+                .tiles
+                .iter()
+                .filter(|&&t| t == Tile::SecretDoor)
+                .count();
             let secret_rooms = level.rooms.iter().filter(|r| r.secret_entry).count();
             assert_eq!(secret_doors, secret_rooms, "seed {s}");
         }
@@ -819,9 +829,14 @@ mod tests {
             let level = build_level(&tree, s);
             let outers: Vec<_> = level.rooms.iter().map(|r| r.outer()).collect();
             for (i, a) in outers.iter().enumerate() {
-                assert!(a.0 >= 0 && a.1 >= 0 && a.0 + a.2 <= level.width && a.1 + a.3 <= level.height);
+                assert!(
+                    a.0 >= 0 && a.1 >= 0 && a.0 + a.2 <= level.width && a.1 + a.3 <= level.height
+                );
                 for b in outers.iter().skip(i + 1) {
-                    let apart = a.0 + a.2 <= b.0 || b.0 + b.2 <= a.0 || a.1 + a.3 <= b.1 || b.1 + b.3 <= a.1;
+                    let apart = a.0 + a.2 <= b.0
+                        || b.0 + b.2 <= a.0
+                        || a.1 + a.3 <= b.1
+                        || b.1 + b.3 <= a.1;
                     assert!(apart, "seed {s}: rooms overlap {a:?} {b:?}");
                 }
             }
@@ -837,7 +852,12 @@ mod tests {
             assert!(level.rooms[0].contains(level.start));
             let exit = level.room_at(level.stairs).expect("stairs in a room");
             assert!(!level.rooms[exit].hidden);
-            let deepest = level.rooms.iter().filter(|r| !r.hidden).map(|r| r.depth).max();
+            let deepest = level
+                .rooms
+                .iter()
+                .filter(|r| !r.hidden)
+                .map(|r| r.depth)
+                .max();
             assert_eq!(Some(level.rooms[exit].depth), deepest);
             assert_eq!(level.tile(level.stairs), Tile::Stairs);
         }
@@ -850,13 +870,14 @@ mod tests {
             let level = build_level(&tree, s);
             let mut seen = std::collections::HashSet::new();
             for sp in &level.spawns {
-                assert!(level.rooms[sp.room].contains(sp.pos));
+                let room = level.room_at(sp.pos).expect("monster inside a room");
+                assert!(level.rooms[room].contains(sp.pos));
                 assert!(matches!(level.tile(sp.pos), Tile::Floor));
                 assert!(seen.insert(sp.pos), "two monsters share {:?}", sp.pos);
                 assert_ne!(sp.pos, level.start);
                 assert_ne!(sp.pos, level.stairs);
-                assert!(sp.room != 0 || sp.pos.dist(level.start) > 2);
-                assert_eq!(sp.hidden, level.rooms[sp.room].hidden);
+                assert!(room != 0 || sp.pos.dist(level.start) > 2);
+                assert_eq!(sp.hidden, level.rooms[room].hidden);
             }
         }
     }
@@ -887,25 +908,48 @@ mod tests {
             .file("run.log", b"x");
         let level = build_level(&scan::scan(tmp.path()), 1);
 
-        let vault = level.rooms.iter().find(|r| r.kind == RoomKind::Vault).expect("vault");
+        let vault = level
+            .rooms
+            .iter()
+            .find(|r| r.kind == RoomKind::Vault)
+            .expect("vault");
         assert_eq!(vault.name, ".git");
         assert!(!vault.hidden && !level.items.is_empty());
 
-        let target = level.rooms.iter().find(|r| r.name == "target").expect("target room");
+        let target = level
+            .rooms
+            .iter()
+            .find(|r| r.name == "target")
+            .expect("target room");
         assert!(target.hidden && target.secret_entry);
-        let debug = level.rooms.iter().find(|r| r.name == "debug").expect("debug room");
-        assert!(debug.hidden && !debug.secret_entry, "only the outermost door is secret");
+        let debug = level
+            .rooms
+            .iter()
+            .find(|r| r.name == "debug")
+            .expect("debug room");
+        assert!(
+            debug.hidden && !debug.secret_entry,
+            "only the outermost door is secret"
+        );
 
-        let cache = level.rooms.iter().find(|r| r.kind == RoomKind::Cache).expect("cache");
+        let cache = level
+            .rooms
+            .iter()
+            .find(|r| r.kind == RoomKind::Cache)
+            .expect("cache");
         assert!(cache.secret_entry);
         let names: Vec<&str> = level
             .spawns
             .iter()
-            .filter(|s| s.room == cache.id)
+            .filter(|s| level.room_at(s.pos) == Some(cache.id))
             .map(|s| s.file.name.as_str())
             .collect();
         assert!(names.contains(&".env") && names.contains(&"run.log"));
-        assert!(level.spawns.iter().filter(|s| s.room == cache.id).all(|s| s.hidden));
+        assert!(level
+            .spawns
+            .iter()
+            .filter(|s| level.room_at(s.pos) == Some(cache.id))
+            .all(|s| s.hidden));
 
         // The visible monsters never include the ignored files.
         let visible: Vec<&str> = level
@@ -926,7 +970,8 @@ mod tests {
             for portal in &level.portals {
                 assert_eq!(level.tile(portal.pos), Tile::Floor);
                 assert!(!near_doorway(&level, portal.pos));
-                assert!(level.rooms[portal.room].contains(portal.pos));
+                let room = level.room_at(portal.pos).expect("portal inside a room");
+                assert!(level.rooms[room].contains(portal.pos));
             }
             assert!(level.reachable_rooms(true).iter().all(|&r| r));
         }
@@ -939,7 +984,6 @@ mod tests {
         for i in 0..400u64 {
             tree.dirs[0].files.push(FileNode {
                 name: format!("f{i}.txt"),
-                path: PathBuf::from(format!("/synthetic/root/f{i}.txt")),
                 metadata: Meta {
                     size: i * 10,
                     modified: None,
