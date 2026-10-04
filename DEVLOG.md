@@ -42,3 +42,32 @@ Running log of what was built, in order, and the decisions taken along the way.
   mail (+def). Chests drop 3–5 items; secret-room monsters always drop and roll higher quality; bosses drop one extra.
 - `Player`: 40 HP, 4 atk; level-up at cumulative `10·L·(L+1)` XP gives +8 max HP, +1 atk (+1 def every third level).
 - 11 unit tests (table, tier boundaries, monotonic tiers, state by age, loot naming/determinism, XP).
+
+## Stage 4 — `mapgen.rs` + `--dump`
+
+- **Seeding:** hand-written 64-bit FNV-1a (checked against the reference vectors for `""`, `"a"`, `"foobar"`) over the
+  canonical absolute path → `ChaCha8Rng::seed_from_u64`. `--seed` overrides the hash.
+- **Layout:** a tidy-tree on a grid of cells. Column = depth in the room tree, rows are handed out by leaf count, and a
+  parent shares its first child's row. Each column is as wide / each row as tall as the biggest room in it (an early
+  fixed-size-cell version produced a 146×121 map for a 33-entry folder; sizing to content gave 59×70).
+  Every room owns a cell, so rooms cannot overlap — by construction, and asserted by a test.
+- **Corridors:** L-shaped: down (or up) the parent's centre column, then across to the child. In this layout the path can
+  only touch the parent and the child, so connectivity is guaranteed and secret rooms cannot be entered by accident.
+  Rock becomes corridor, a crossed wall becomes a door.
+- **Room size** scales with occupant count (`area = max(30, 7·n)`, 2:1 aspect) and is capped at 30×13 interior. A room only
+  holds `area/6` monsters; if more files exist, the *largest* files are kept.
+- **Secret doors:** an ignored directory whose parent is visible gets a `SecretDoor` in its west wall; everything nested
+  inside is hidden but normally connected. Ignored *files* of a visible directory go into a hidden **cache room** attached
+  to that directory behind its own secret door (this is how `.env` / `*.log` become secret rooms).
+- **`.git`** → vault room (7×5) with three pieces of treasure on the floor. **Unreadable dir** → sealed room (5×3, empty,
+  `:` floor) that is still connected, so the BFS-connectivity guarantee holds.
+- **Portals** (symlinks) are placed on wall-hugging tiles that are not next to a doorway, at most a third of the free ring,
+  so they can never seal a room.
+- **Start** in the root room; **stairs** in the deepest room that is *not* hidden, so the game is winnable without finding a
+  secret. Monsters keep 3+ tiles away from the start.
+- `Level::can_step` forbids squeezing diagonally between solid corners, so 4-connected BFS matches real movement.
+- `--dump` prints the ground-truth map (secret doors as `X`, mimics as `M`) plus a legend and a summary line; a closed pipe is
+  not an error.
+- 16 tests: FNV vectors, determinism (synthetic + real dir), BFS reachability over 200 random trees, secret rooms
+  reachable *only* through secret doors, no overlap, start/stairs placement, monster placement invariants, size scaling,
+  vault/cache/secret classification from a real directory, portals, crowded-room cap.
