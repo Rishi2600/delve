@@ -160,3 +160,36 @@ degenerate. A permanent test (`the_game_stays_winnable_when_every_file_is_fresh`
 2 escapes and at least 5 deaths. `[profile.test] opt-level = 2` keeps whole-game tests fast (the full suite runs in ~2 s).
 - Probe caveats worth knowing: two "stuck" artefacts turned out to be bot bugs (bumping a portal / a corner-blocked
   diagonal costs no turn), not game bugs.
+
+## Stage 8 — ignored-subtree budget (found by dogfooding)
+
+Running `cargo run -- --dump` on this very repository produced a **163 KB** map: its gitignored `target/` had become a maze of
+hundreds of secret rooms. The per-directory cap bounded each ignored directory but not the ignored subtree as a whole, so a
+real `node_modules/` or `target/` would do the same. Two global budgets now apply to everything gitignored:
+
+- at most **300 entries** in total, and
+- at most **24 directories** in total — directories are what become rooms, so this is the budget that actually bounds the
+  secret area (counting only entries still left 179 secret rooms behind `target/`).
+
+Both are checked in breadth-first order, so the shallowest ignored entries survive and the real tree keeps the rest of the
+2000-entry cap. Result for this repo: 16 KB map, 27 rooms (3 open, 24 behind one secret door). Two new tests pin the budgets
+(entry budget with the real tree untouched; directory budget). The stress runs got cheaper too (`/` is 744 rooms, 0.01 s).
+
+## Final state
+
+- **Quality bar met:** built incrementally (scaffold → scan → entities → mapgen + `--dump` → game → UI) with `cargo check`/tests
+  after every stage; `cargo clippy -- -D warnings` and `cargo clippy --all-targets -- -D warnings` clean; `cargo fmt --check`
+  clean; **81 tests** pass in ~2 s. Verified again on a **fresh clone** of `origin/main`.
+- **Required tests present:** deterministic generation (same path + seed ⇒ identical map), connectivity (BFS from the start reaches
+  every room, 200 random trees), gitignore classification, size ⇒ tier mapping, and "scanning never writes" (snapshot of a temp
+  dir before/after — mutation-checked, plus a whole 400-turn session variant).
+- **Hard rules honoured:** read-only filesystem access (only `read_dir`, `symlink_metadata` and reading `.gitignore` files);
+  scan cap 2000 entries / depth 6; `.git` is a single vault that is never descended into; symlinks are never followed (portals
+  show only their name); no `unwrap`/`expect` on filesystem or I/O results in non-test code (unreadable directories become sealed
+  rooms, unreadable roots a clean error); terminal restored on panic (verified in a real pseudo-terminal).
+- **Decisions the spec left open**, all recorded above: tidy-tree layout with content-sized rows/columns; secret door on the
+  child's west wall; ignored *files* get a hidden cache room per directory; stairs in the deepest *non-hidden* room so the game is
+  winnable without secrets; start beside the first doorway; budgets for ignored subtrees; balance numbers tuned by simulation.
+- **Known limitations:** a directory with hundreds of sibling subdirectories makes a very tall map (e.g. the cargo registry is
+  64×9063); the scan is a start-up snapshot; developed and tested on Linux only (tests use Unix permissions and symlinks).
+- **Deliverables:** `README.md` (build, controls, monster tables, sample `--dump`), this `DEVLOG.md`, the source, and the tests.

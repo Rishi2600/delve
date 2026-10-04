@@ -68,8 +68,9 @@ Layout is a tidy tree on a grid: a room's column is its depth and rows are hande
 so rooms never overlap and every room is connected. You start just inside the root room's first
 doorway; the stairs are in the deepest room you can reach without finding any secret.
 
-Scan limits: 2000 entries, depth 6. Ignored directories record at most 48 entries each, so a huge
-`node_modules/` cannot crowd out the rest of the tree. A room holds at most one monster per ten
+Scan limits: 2000 entries, depth 6. Gitignored entries are budgeted separately (at most 48 entries per ignored
+directory, 300 entries and 24 directories in total), so a huge `node_modules/` or `target/` becomes a compact secret area
+instead of a maze, and cannot crowd out the rest of the tree. A room holds at most one monster per ten
 floor tiles; if a directory has more files than that, its biggest files are kept.
 
 The seed is a hand-written 64-bit FNV-1a hash of the canonical absolute path, fed to ChaCha8, so the
@@ -235,7 +236,7 @@ chest-monster `B` are in the assets room; the stairs `>` are in the deepest visi
 ## Testing
 
 ```sh
-cargo test                       # 79 tests, about two seconds
+cargo test                       # 81 tests, about two seconds
 cargo clippy --all-targets -- -D warnings
 ```
 

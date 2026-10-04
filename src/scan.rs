@@ -22,6 +22,13 @@ pub const MAX_DEPTH: u32 = 6;
 /// Entries recorded per ignored directory, so `node_modules/` cannot eat the
 /// whole budget and starve the rest of the dungeon.
 pub const IGNORED_DIR_ENTRY_CAP: usize = 48;
+/// Entries recorded in total across everything ignored. Secret areas stay a
+/// handful of rooms instead of a maze, and the real tree keeps the rest of
+/// the [`MAX_ENTRIES`] budget.
+pub const MAX_IGNORED_ENTRIES: usize = 300;
+/// Ignored *directories* recorded in total. Every directory is a room, so this
+/// is what actually bounds the size of the secret areas.
+pub const MAX_IGNORED_DIRS: usize = 24;
 
 /// What kind of room a directory becomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +119,8 @@ pub fn scan(root: &Path) -> Tree {
     let mut matchers: Vec<Option<Gitignore>> = vec![load_gitignore(root)];
 
     let mut count = 0usize;
+    let mut ignored_count = 0usize;
+    let mut ignored_dirs = 0usize;
     let mut queue: VecDeque<usize> = VecDeque::from([0]);
 
     'walk: while let Some(id) = queue.pop_front() {
@@ -137,7 +146,9 @@ pub fn scan(root: &Path) -> Tree {
                 tree.truncated = true;
                 break 'walk;
             }
-            if dir_ignored && recorded_here >= IGNORED_DIR_ENTRY_CAP {
+            if dir_ignored
+                && (recorded_here >= IGNORED_DIR_ENTRY_CAP || ignored_count >= MAX_IGNORED_ENTRIES)
+            {
                 tree.truncated = true;
                 break;
             }
@@ -153,10 +164,22 @@ pub fn scan(root: &Path) -> Tree {
                 modified: md.modified().ok(),
             };
 
-            if ft.is_dir() && !ft.is_symlink() {
-                let is_vault = display == ".git";
-                let ignored = dir_ignored
-                    || (!is_vault && is_ignored(&matchers, &base, &tree, id, &path, true));
+            let is_dir = ft.is_dir() && !ft.is_symlink();
+            let is_vault = is_dir && display == ".git";
+            let ignored = dir_ignored
+                || (!is_vault && is_ignored(&matchers, &base, &tree, id, &path, is_dir));
+            if ignored {
+                if ignored_count >= MAX_IGNORED_ENTRIES
+                    || (is_dir && ignored_dirs >= MAX_IGNORED_DIRS)
+                {
+                    tree.truncated = true;
+                    continue;
+                }
+                ignored_count += 1;
+                ignored_dirs += usize::from(is_dir);
+            }
+
+            if is_dir {
                 let new_id = tree.dirs.len();
                 tree.dirs.push(DirNode {
                     parent: Some(id),
@@ -183,7 +206,6 @@ pub fn scan(root: &Path) -> Tree {
                 }
             } else {
                 let portal = ft.is_symlink();
-                let ignored = dir_ignored || is_ignored(&matchers, &base, &tree, id, &path, false);
                 tree.dirs[id].files.push(FileNode {
                     name: display,
                     metadata: if portal { Meta::default() } else { meta },
@@ -456,5 +478,54 @@ mod tests {
         assert!(tree.entry_count() > 20, "and it was really scanned");
         let after = crate::testutil::snapshot(tmp.path());
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn total_ignored_entries_are_budgeted_and_the_real_tree_is_untouched() {
+        let tmp = TempDir::new();
+        tmp.file(".gitignore", b"node_modules/\n*.log\n");
+        // 20 ignored package dirs x 20 files = 400 ignored entries (+20 dirs) in
+        // node_modules, plus 400 ignored loose log files.
+        for p in 0..20 {
+            for f in 0..20 {
+                tmp.file(&format!("node_modules/pkg{p:02}/f{f:02}.js"), b"x");
+            }
+        }
+        for l in 0..400 {
+            tmp.file(&format!("noise{l:03}.log"), b"x");
+        }
+        for r in 0..30 {
+            tmp.file(&format!("src/real{r:02}.rs"), b"x");
+        }
+        let t = scan(tmp.path());
+        let ignored: usize = t.dirs.iter().filter(|d| d.ignored).count()
+            + t.dirs
+                .iter()
+                .flat_map(|d| &d.files)
+                .filter(|f| f.ignored)
+                .count();
+        assert_eq!(ignored, MAX_IGNORED_ENTRIES);
+        assert!(t.truncated);
+        assert_eq!(
+            find_dir(&t, "src").files.len(),
+            30,
+            "real files all recorded"
+        );
+        assert!(!find_dir(&t, "src").ignored);
+    }
+
+    #[test]
+    fn ignored_directories_are_budgeted_because_each_one_is_a_room() {
+        let tmp = TempDir::new();
+        tmp.file(".gitignore", b"target/\n");
+        for d in 0..80 {
+            tmp.file(&format!("target/debug/d{d:02}/x"), b"x");
+        }
+        tmp.file("src/a.rs", b"x");
+        let t = scan(tmp.path());
+        let ignored_dirs = t.dirs.iter().filter(|d| d.ignored).count();
+        assert_eq!(ignored_dirs, MAX_IGNORED_DIRS);
+        assert!(t.truncated);
+        assert!(!find_dir(&t, "src").ignored, "the real tree is untouched");
     }
 }
