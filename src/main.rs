@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
+mod entities;
 mod scan;
 #[cfg(test)]
 mod testutil;

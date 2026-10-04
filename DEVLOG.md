@@ -26,3 +26,19 @@ Running log of what was built, in order, and the decisions taken along the way.
   whole 2000-entry budget and starve the real tree.
 - 9 unit tests (classification, nested ignore, negation, vault, portals, entry/depth caps, sealed dirs,
   determinism). A hand-rolled `TempDir` lives in `src/testutil.rs` (test-only).
+
+## Stage 3 — `entities.rs`
+
+- `Pos` (Chebyshev `dist`), `Class` + the extension table (`.rs` crab, `.py` snake, `.js/.ts` goblin, `.md/.txt` ghost,
+  `.json/.toml/.yaml` golem, images mimic, archives chest-monster, anything else slime; case-insensitive; dotfiles like
+  `.env` have no extension → slime). Behaviour flags per class: speed (fast/normal/slow), armor, passes walls, erratic,
+  stationary.
+- `size_tier(size)`: `<1KiB` Rat, `<16KiB` Small, `<256KiB` Medium, `<1MiB` Large, `<10MiB` Huge, else Boss; each tier has
+  base (hp, atk, xp). `monster_stats` mixes class modifiers in (golem +60% HP, chest +30%, ghost −30%, mimic +20%) and the
+  secret-room bonus (+50% HP, +2 atk, 2× XP).
+- `initial_state(mtime, now)`: modified < 7 days ago → Hunting; ≥ 365 days → Asleep (wakes within 3 tiles); in between →
+  Idle (wanders until you are close). Future mtimes count as fresh; unknown mtime is Idle.
+- Loot is always named after the file ("Scroll of README.md"): potion (heal), scroll (magic mapping), blade (+atk),
+  mail (+def). Chests drop 3–5 items; secret-room monsters always drop and roll higher quality; bosses drop one extra.
+- `Player`: 40 HP, 4 atk; level-up at cumulative `10·L·(L+1)` XP gives +8 max HP, +1 atk (+1 def every third level).
+- 11 unit tests (table, tier boundaries, monotonic tiers, state by age, loot naming/determinism, XP).
