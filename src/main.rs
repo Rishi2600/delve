@@ -3,6 +3,10 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
+mod scan;
+#[cfg(test)]
+mod testutil;
+
 /// delve — turn a directory into a terminal roguelike dungeon.
 ///
 /// Strictly read-only: the filesystem is only ever read, never written.
