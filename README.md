@@ -63,15 +63,25 @@ the run ended.
 | Symlink                     | A portal `O` showing only its name; never followed                      |
 | Unreadable directory        | A sealed room (`:` floor), empty but reachable                          |
 | Gitignored dir or file      | A **secret room** behind a secret door (see below)                      |
+| `node_modules/`, caches, lock files | Left out of the dungeon entirely (see below)                    |
 
 Layout is a tidy tree on a grid: a room's column is its depth and rows are handed out by leaf count,
 so rooms never overlap and every room is connected. You start just inside the root room's first
 doorway; the stairs are in the deepest room you can reach without finding any secret.
 
 Scan limits: 2000 entries, depth 6. Gitignored entries are budgeted separately (at most 48 entries per ignored
-directory, 300 entries and 24 directories in total), so a huge `node_modules/` or `target/` becomes a compact secret area
-instead of a maze, and cannot crowd out the rest of the tree. A room holds at most one monster per ten
+directory, 300 entries and 24 directories in total), so a project's own ignored folders become a compact secret
+area instead of a maze, and cannot crowd out the rest of the tree. A room holds at most one monster per ten
 floor tiles; if a directory has more files than that, its biggest files are kept.
+
+**Left out entirely:** bulk that is no fun to play in is never read, never counts against the caps and
+never becomes a room or a monster. That is `node_modules/` (always, gitignored or not) and the other
+dependency and cache folders (`bower_components`, `.venv`, `venv`, `__pycache__`, `.next`, `.nuxt`,
+`.svelte-kit`, `.turbo`, `.gradle`, `.tox`, and the mypy/pytest/ruff/parcel caches), the build-output folders
+`target`, `dist`, `build`, `out`, `coverage`, `vendor` and `.cache` (only when gitignore says they are
+generated, since a tracked `build/` is real source), and generated lock files (`package-lock.json`,
+`yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`, `go.sum`, ...). `--dump` reports how many entries
+were left out. The lists are the constants at the top of `src/scan.rs`.
 
 The seed is a hand-written 64-bit FNV-1a hash of the canonical absolute path, fed to ChaCha8, so the
 same folder gives the same dungeon.
@@ -125,7 +135,7 @@ doorways and corridors.
   items to pick them up (26 slots).
 - **Secret doors:** ignored entries are invisible and drawn as plain wall. A corridor that dead-ends
   at a wall is the hint; `s` finds an adjacent secret door with probability `min(90, 35 + 10 x level)`%
-  per attempt. Ignored *directories* (`target/`, `node_modules/`) become secret rooms; ignored *files*
+  per attempt. Ignored *directories* (say a private `notes/` folder) become secret rooms; ignored *files*
   (`.env`, `*.log`) of a directory share one hidden cache room attached to it. Their monsters are
   tougher (+50% HP, +2 attack, double XP) and their loot is better.
 - **Combat:** you deal `attack + weapon + 0..2 - armor` (at least 1); monsters deal
@@ -137,106 +147,128 @@ doorways and corridors.
 
 `--dump` prints the generated map as ASCII with no TUI. It is the ground-truth view (secret doors
 show as `X`, mimics as `M`), and it is what the tests use. Example, for a small project with a
-`.git` vault, an ignored `target/` and `.env`, symlinks, one unreadable directory and every file type:
+`.git` vault, an ignored `private/` folder and `.env`, symlinks, one unreadable directory, a `node_modules/`
+and a lock file (both left out) and every file type:
 
 ```
 $ delve --dump --seed 7 demo/
- ###########      #########
- #..O......#      #..!../.#
- #..j......#      #.......#
- #Gj......@+,,,,,,+.......#
- #j........#      #....../#
- #.........#      #.......#
- #.HO......#      #########
- #####+#####
-      ,
-      ,
-      ,
-      ,           #########
-      ,           #.......#
-      ,           #...M..B#
-      ,,,,,,,,,,,,+.M.....#
-      ,           #.......#
-      ,           #.......#
-      ,           #########
-      ,
-      ,
-      ,
-      ,           #########
-      ,           #.......#
-      ,           #.G.....#
-      ,,,,,,,,,,,,+.....G.#
-      ,           #.......#
-      ,           #.......#
-      ,           #########
-      ,
-      ,
-      ,
-      ,           #######
-      ,           #:::::#
-      ,,,,,,,,,,,,+:::::#
-      ,           #:::::#
-      ,           #######
-      ,
-      ,
-      ,
-      ,           #########
-      ,           #..S....#
-      ,           #.......#
-      ,,,,,,,,,,,,+.......#
-      ,           #.......#
-      ,           #...g.H.#
-      ,           #########
-      ,
-      ,
-      ,
-      ,           #########      #########
-      ,           #.......#      #......C#
-      ,           #..C....#      #.......#
-      ,,,,,,,,,,,,+....C..+,,,,,,+.C...>.#
-      ,           #.C.....#      #.......#
-      ,           #.......#      #.......#
-      ,           #########      #########
-      ,
-      ,
-      ,
-      ,           #########      #########      #########
-      ,           #.......#      #.......#      #.......#
-      ,           #.......#      #.......#      #.......#
-      ,,,,,,,,,,,,X.......+,,,,,,+.......+,,,,,,+.......#
-      ,           #.......#      #.......#      #.......#
-      ,           #.......#      #.....j.#      #....j..#
-      ,           #########      #########      #########
-      ,
-      ,
-      ,
-      ,           #########
-      ,           #.......#
-      ,           #.......#
-      ,,,,,,,,,,,,X.......#
-                  #..jj...#
-                  #.......#
-                  #########
+ ############      #########
+ #....O.....#      #.......#
+ #..jj......#      #.......#
+ #OGG.H....@+,,,,,,+?/.....#
+ #..........#      #.......#
+ #.H........#      #....[..#
+ #..........#      #########
+ ######+#####
+       ,
+       ,
+       ,
+       ,           #########
+       ,           #M......#
+       ,           #.......#
+       ,,,,,,,,,,,,+.......#
+       ,           #..M....#
+       ,           #B......#
+       ,           #########
+       ,
+       ,
+       ,
+       ,           #########
+       ,           #......H#
+       ,           #.......#
+       ,,,,,,,,,,,,+.......#
+       ,           #......H#
+       ,           #.......#
+       ,           #########
+       ,
+       ,
+       ,
+       ,           #########
+       ,           #.......#
+       ,           #.......#
+       ,,,,,,,,,,,,+...G...#
+       ,           #.......#
+       ,           #.....G.#
+       ,           #########
+       ,
+       ,
+       ,
+       ,             #######
+       ,             #:::::#
+       ,,,,,,,,,,,,,,+:::::#
+       ,             #:::::#
+       ,             #######
+       ,
+       ,
+       ,
+       ,           #########      #########
+       ,           #.......#      #.......#
+       ,           #.......#      #.......#
+       ,,,,,,,,,,,,X.......+,,,,,,+.......#
+       ,           #.......#      #.......#
+       ,           #.......#      #j......#
+       ,           ####+####      #########
+       ,               ,
+       ,               ,
+       ,               ,
+       ,               ,          #########
+       ,               ,          #.......#
+       ,               ,          #.......#
+       ,               ,,,,,,,,,,,+.......#
+       ,                          #.......#
+       ,                          #...j...#
+       ,                          #########
+       ,
+       ,
+       ,
+       ,           #########
+       ,           #...S...#
+       ,           #.......#
+       ,,,,,,,,,,,,+.......#
+       ,           #.......#
+       ,           #.g..H..#
+       ,           #########
+       ,
+       ,
+       ,
+       ,           #########      #########
+       ,           #.......#      #.......#
+       ,           #.......#      #.......#
+       ,,,,,,,,,,,,+...C...+,,,,,,+.S.....#
+       ,           #....CC.#      #.......#
+       ,           #.......#      #...>...#
+       ,           #########      #########
+       ,
+       ,
+       ,
+       ,           #########
+       ,           #.......#
+       ,           #.....j.#
+       ,,,,,,,,,,,,X.j.....#
+                   #.......#
+                   #.......#
+                   #########
 
 Legend: # wall  . floor  : sealed room  , corridor  + door  X secret door  > stairs  @ start
 Monsters: C crab(.rs)  S snake(.py)  g goblin(.js/.ts)  G ghost(.md/.txt)  H golem(.json/.toml/.yaml)
           M mimic(images)  B chest-monster(archives)  j slime(other)    O portal(symlink)
 Items: ! potion  ? scroll  / blade  [ mail
 
-/path/to/demo  seed 7  entries 34  map 59x79
-rooms 12 (8 open, 4 behind 2 secret doors)  monsters 22
+/path/to/demo  seed 7  entries 38, 2 left out (dependency dirs / lock files)  map 45x99
+rooms 13 (9 open, 4 behind 2 secret doors)  monsters 24
 ```
 
-You can read it: the root room (top left) holds three slimes, a ghost, a golem and two portals, and
-you start (`@`) at its east door, which leads to the `.git` vault (`!` potion, `/` blades). The sealed
-`:` room is the unreadable directory. The two `X` doors guard `target/` (with its nested `debug/` and
-`deps/` rooms) and the hidden cache holding `.env` and `build.log`. The mimics `M` and the
-chest-monster `B` are in the assets room; the stairs `>` are in the deepest visible room.
+You can read it: the root room (top left) holds two slimes, two ghosts, two golems and two portals, and
+you start (`@`) at its east door, which leads to the `.git` vault (`?` scroll, `/` blade, `[` mail). The
+sealed `:` room is the unreadable directory. The two `X` doors guard `private/` (with its nested `inner/`
+and `deps/` rooms) and the hidden cache holding `.env` and `build.log`. The mimics `M` and the
+chest-monster `B` are in the assets room; the stairs `>` are in the deepest visible room. `node_modules/`
+and `package-lock.json` are in the demo project too, but they are left out, as the summary line says.
 
 ## Testing
 
 ```sh
-cargo test                       # 81 tests, about two seconds
+cargo test                       # 85 tests, about two seconds
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -248,6 +280,8 @@ What the tests pin down:
   reachable *only* through secret doors; rooms never overlap.
 - **gitignore classification:** negation, nested `.gitignore` files, ignored entries kept (not
   skipped), everything inside an ignored directory is ignored.
+- **Left-out bulk:** `node_modules/` and lock files vanish with or without a `.gitignore`, look-alike names
+  stay, `build/`-style folders go only when ignored, and left-out entries never eat the entry cap.
 - **Size to tier mapping**, the extension table, mtime to state, loot naming, XP curve.
 - **Read-only guarantee:** a snapshot of a temp directory (kinds, sizes, permissions, mtimes, content
   hashes, symlink targets) is identical before and after both a scan and a whole 400-turn session of

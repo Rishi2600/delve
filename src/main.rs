@@ -161,10 +161,15 @@ fn dump(root: &Path, seed: u64, tree: &scan::Tree, level: &mapgen::Level) -> Res
     let open = level.reachable_rooms(false).iter().filter(|&&r| r).count();
     let secret = level.rooms.iter().filter(|r| r.secret_entry).count();
     text.push_str(&format!(
-        "\n{}  seed {seed}  entries {}{}  map {}x{}\nrooms {} ({open} open, {} behind {secret} secret door{})  monsters {}\n",
+        "\n{}  seed {seed}  entries {}{}{}  map {}x{}\nrooms {} ({open} open, {} behind {secret} secret door{})  monsters {}\n",
         root.display(),
         tree.entry_count(),
         if tree.truncated { " (capped)" } else { "" },
+        if tree.skipped > 0 {
+            format!(", {} left out (dependency dirs / lock files)", tree.skipped)
+        } else {
+            String::new()
+        },
         level.width,
         level.height,
         level.rooms.len(),

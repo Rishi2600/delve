@@ -734,6 +734,7 @@ mod tests {
         Tree {
             dirs,
             truncated: false,
+            skipped: 0,
         }
     }
 
@@ -776,11 +777,11 @@ mod tests {
     #[test]
     fn real_directory_generation_is_deterministic() {
         let tmp = TempDir::new();
-        tmp.file(".gitignore", b"target/\n.env\n")
+        tmp.file(".gitignore", b"private/\n.env\n")
             .file("src/main.rs", b"fn main(){}")
             .file("src/lib.rs", b"")
             .file("docs/README.md", b"hi")
-            .file("target/debug/app", b"bin")
+            .file("private/inner/app", b"bin")
             .file(".env", b"X=1");
         let seed = seed_for_path(tmp.path());
         let a = build_level(&scan::scan(tmp.path()), seed).to_ascii();
@@ -921,10 +922,10 @@ mod tests {
     #[test]
     fn git_is_a_vault_ignored_entries_are_secret() {
         let tmp = TempDir::new();
-        tmp.file(".gitignore", b"target/\n.env\n*.log\n")
+        tmp.file(".gitignore", b"private/\n.env\n*.log\n")
             .file(".git/HEAD", b"ref")
             .file("src/main.rs", b"fn main(){}")
-            .file("target/debug/app", b"bin")
+            .file("private/inner/app", b"bin")
             .file(".env", b"X=1")
             .file("run.log", b"x");
         let level = build_level(&scan::scan(tmp.path()), 1);
@@ -937,19 +938,19 @@ mod tests {
         assert_eq!(vault.name, ".git");
         assert!(!vault.hidden && !level.items.is_empty());
 
-        let target = level
+        let private = level
             .rooms
             .iter()
-            .find(|r| r.name == "target")
-            .expect("target room");
-        assert!(target.hidden && target.secret_entry);
-        let debug = level
+            .find(|r| r.name == "private")
+            .expect("private room");
+        assert!(private.hidden && private.secret_entry);
+        let inner = level
             .rooms
             .iter()
-            .find(|r| r.name == "debug")
-            .expect("debug room");
+            .find(|r| r.name == "inner")
+            .expect("inner room");
         assert!(
-            debug.hidden && !debug.secret_entry,
+            inner.hidden && !inner.secret_entry,
             "only the outermost door is secret"
         );
 

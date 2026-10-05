@@ -175,11 +175,40 @@ Both are checked in breadth-first order, so the shallowest ignored entries survi
 2000-entry cap. Result for this repo: 16 KB map, 27 rooms (3 open, 24 behind one secret door). Two new tests pin the budgets
 (entry budget with the real tree untouched; directory budget). The stress runs got cheaper too (`/` is 744 rooms, 0.01 s).
 
+## Stage 9 — leave dependency folders and lock files out of the dungeon
+
+Report from playing it on real projects: `node_modules/` and `package-lock.json` made the game feel endless. Reproduced on
+four projects from `~/Projects` (all gitignore `node_modules/`) with `--dump`: maps were 111–146 columns by 429–1263 rows.
+What was going on:
+
+- gitignored `node_modules/` and `.next/` still became secret areas (the 24-directory budget went to them first), with
+  corridors that dead-end at a wall for a player who has not found the door;
+- when a folder does **not** gitignore `node_modules/` (a plain folder, a monorepo) it was an ordinary visible subtree
+  that could take most of the 2000-entry cap;
+- a lock file is a Large golem (28 HP) and, being the biggest file in the root room, always got a monster slot there.
+
+**Decision:** drop that bulk from the game instead of tuning it. `scan.rs` now leaves out, never reading or counting them:
+dependency/cache directories by name (`node_modules`, `.venv`, `__pycache__`, `.next`, ...), build-output names that are also
+ordinary folder names (`target`, `dist`, `build`, `out`, `coverage`, `vendor`, `.cache`) **only when gitignored**, and generated lock
+files (`package-lock.json`, `yarn.lock`, `Cargo.lock`, ...). `Tree.skipped` counts them and `--dump` reports it. This is a
+deliberate exception to "classify, never skip ignored entries": the project's own ignored files and folders (`.env`, logs, a
+private `notes/`) still become secret rooms, which is what the feature is for.
+
+Same four projects, before → after: `crm` 92 → 68 rooms (map 711 → 483 rows, hidden rooms 25 → 1), `OB` 54 → 31 rooms
+(429 → 204 rows), `pinntagBackend` 148 → 130 rooms (1263 → 1050 rows). `Analytics-dashboard-supabase` is unchanged at 76 rooms
+because its 25 hidden rooms are its own gitignored `.agents/` and `docs/` folders, not bulk. What remains in big projects is
+the real directory tree (`crm/src` alone is 53 directories); a very tall map there is the known one-row-per-leaf limitation.
+
+Tests: fixtures that used `target/` and `node_modules/` as the secret room now use a neutral ignored `private/` or `stash/`.
+Four new tests: dependency directories vanish with no `.gitignore`; lock files go while manifests and look-alike names
+(`package-lock.json.bak`, `node_modules_old/`) stay; build-output names go only when gitignored; left-out entries never eat the
+entry cap. 85 tests pass, clippy clean. The README sample dump was regenerated for the new behaviour.
+
 ## Final state
 
 - **Quality bar met:** built incrementally (scaffold → scan → entities → mapgen + `--dump` → game → UI) with `cargo check`/tests
   after every stage; `cargo clippy -- -D warnings` and `cargo clippy --all-targets -- -D warnings` clean; `cargo fmt --check`
-  clean; **81 tests** pass in ~2 s. Verified again on a **fresh clone** of `origin/main`.
+  clean; **85 tests** pass in ~2 s. Verified again on a **fresh clone** of `origin/main`.
 - **Required tests present:** deterministic generation (same path + seed ⇒ identical map), connectivity (BFS from the start reaches
   every room, 200 random trees), gitignore classification, size ⇒ tier mapping, and "scanning never writes" (snapshot of a temp
   dir before/after — mutation-checked, plus a whole 400-turn session variant).

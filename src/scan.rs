@@ -3,7 +3,9 @@
 //! Walks a directory tree breadth-first (so the entry cap trims the deepest
 //! entries first) and produces a [`Tree`]. Entries matched by gitignore rules
 //! are *classified* (`ignored = true`), never skipped: the map generator turns
-//! them into secret rooms.
+//! them into secret rooms. The one exception is bulk the game has no use for
+//! (dependency folders, caches, lock files, see [`is_bulk`]): those are left
+//! out of the dungeon altogether.
 //!
 //! This module only ever calls `read_dir`, `symlink_metadata` and reads
 //! `.gitignore` files. It never writes, and never follows symlinks.
@@ -29,6 +31,59 @@ pub const MAX_IGNORED_ENTRIES: usize = 300;
 /// Ignored *directories* recorded in total. Every directory is a room, so this
 /// is what actually bounds the size of the secret areas.
 pub const MAX_IGNORED_DIRS: usize = 24;
+
+/// Installed dependencies, caches and tool output. Huge, machine-made and never
+/// worth playing in, so they are left out of the dungeon whether or not
+/// gitignore lists them (a plain folder or a monorepo often does not).
+const BULK_DIRS: &[&str] = &[
+    "node_modules",
+    "bower_components",
+    "jspm_packages",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".gradle",
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    ".turbo",
+    ".parcel-cache",
+];
+/// Build-output names that are also ordinary folder names. Only left out when
+/// gitignore says they are generated; a tracked `build/` is real source.
+const BULK_DIRS_IF_IGNORED: &[&str] = &[
+    "target", "dist", "build", "out", "coverage", "vendor", ".cache",
+];
+/// Generated dependency lock files: big, machine-written, dull monsters.
+const LOCK_FILES: &[&str] = &[
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lock",
+    "bun.lockb",
+    "Cargo.lock",
+    "composer.lock",
+    "Gemfile.lock",
+    "poetry.lock",
+    "Pipfile.lock",
+    "uv.lock",
+    "go.sum",
+];
+
+/// Should this entry be left out of the dungeon entirely? Skipped entries are
+/// never read, never become rooms or monsters, and never count against the caps.
+fn is_bulk(name: &str, is_dir: bool, ignored: bool) -> bool {
+    if is_dir {
+        BULK_DIRS.contains(&name) || (ignored && BULK_DIRS_IF_IGNORED.contains(&name))
+    } else {
+        LOCK_FILES.contains(&name)
+    }
+}
 
 /// What kind of room a directory becomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +136,9 @@ pub struct Tree {
     pub dirs: Vec<DirNode>,
     /// True if a cap (entries or per-ignored-dir) cut the scan short.
     pub truncated: bool,
+    /// Entries deliberately left out (dependency folders, lock files). A skipped
+    /// directory counts once; its contents are never read.
+    pub skipped: usize,
 }
 
 impl Tree {
@@ -95,6 +153,7 @@ pub fn scan(root: &Path) -> Tree {
     let mut tree = Tree {
         dirs: Vec::new(),
         truncated: false,
+        skipped: 0,
     };
 
     let root_name = root
@@ -168,6 +227,10 @@ pub fn scan(root: &Path) -> Tree {
             let is_vault = is_dir && display == ".git";
             let ignored = dir_ignored
                 || (!is_vault && is_ignored(&matchers, &base, &tree, id, &path, is_dir));
+            if is_bulk(&display, is_dir, ignored) {
+                tree.skipped += 1;
+                continue;
+            }
             if ignored {
                 if ignored_count >= MAX_IGNORED_ENTRIES
                     || (is_dir && ignored_dirs >= MAX_IGNORED_DIRS)
@@ -325,12 +388,12 @@ mod tests {
     #[test]
     fn classifies_gitignored_entries_without_skipping_them() {
         let tmp = TempDir::new();
-        tmp.file(".gitignore", b"target/\n*.log\n!keep.log\n.env\n")
+        tmp.file(".gitignore", b"private/\n*.log\n!keep.log\n.env\n")
             .file("main.rs", b"fn main() {}")
             .file("debug.log", b"x")
             .file("keep.log", b"x")
             .file(".env", b"SECRET=1")
-            .file("target/debug/app", b"bin")
+            .file("private/inner/app", b"bin")
             .file("src/lib.rs", b"");
         let t = scan(tmp.path());
 
@@ -342,10 +405,10 @@ mod tests {
         assert!(!find_file(root, ".gitignore").ignored);
 
         // Ignored entries are kept, and everything inside an ignored dir is ignored.
-        let target = find_dir(&t, "target");
-        assert!(target.ignored);
-        assert!(find_dir(&t, "debug").ignored);
-        assert!(find_file(find_dir(&t, "debug"), "app").ignored);
+        let private = find_dir(&t, "private");
+        assert!(private.ignored);
+        assert!(find_dir(&t, "inner").ignored);
+        assert!(find_file(find_dir(&t, "inner"), "app").ignored);
         assert!(!find_dir(&t, "src").ignored);
         assert!(!find_file(find_dir(&t, "src"), "lib.rs").ignored);
     }
@@ -423,15 +486,12 @@ mod tests {
     #[test]
     fn ignored_dirs_are_capped_so_they_cannot_starve_the_tree() {
         let tmp = TempDir::new();
-        tmp.file(".gitignore", b"node_modules/\n");
+        tmp.file(".gitignore", b"stash/\n");
         for i in 0..200 {
-            tmp.file(&format!("node_modules/p{i:03}.js"), b"");
+            tmp.file(&format!("stash/p{i:03}.js"), b"");
         }
         let t = scan(tmp.path());
-        assert_eq!(
-            find_dir(&t, "node_modules").files.len(),
-            IGNORED_DIR_ENTRY_CAP
-        );
+        assert_eq!(find_dir(&t, "stash").files.len(), IGNORED_DIR_ENTRY_CAP);
         assert!(t.truncated);
     }
 
@@ -483,12 +543,12 @@ mod tests {
     #[test]
     fn total_ignored_entries_are_budgeted_and_the_real_tree_is_untouched() {
         let tmp = TempDir::new();
-        tmp.file(".gitignore", b"node_modules/\n*.log\n");
+        tmp.file(".gitignore", b"stash/\n*.log\n");
         // 20 ignored package dirs x 20 files = 400 ignored entries (+20 dirs) in
-        // node_modules, plus 400 ignored loose log files.
+        // stash, plus 400 ignored loose log files.
         for p in 0..20 {
             for f in 0..20 {
-                tmp.file(&format!("node_modules/pkg{p:02}/f{f:02}.js"), b"x");
+                tmp.file(&format!("stash/pkg{p:02}/f{f:02}.js"), b"x");
             }
         }
         for l in 0..400 {
@@ -517,9 +577,9 @@ mod tests {
     #[test]
     fn ignored_directories_are_budgeted_because_each_one_is_a_room() {
         let tmp = TempDir::new();
-        tmp.file(".gitignore", b"target/\n");
+        tmp.file(".gitignore", b"stash/\n");
         for d in 0..80 {
-            tmp.file(&format!("target/debug/d{d:02}/x"), b"x");
+            tmp.file(&format!("stash/inner/d{d:02}/x"), b"x");
         }
         tmp.file("src/a.rs", b"x");
         let t = scan(tmp.path());
@@ -527,5 +587,90 @@ mod tests {
         assert_eq!(ignored_dirs, MAX_IGNORED_DIRS);
         assert!(t.truncated);
         assert!(!find_dir(&t, "src").ignored, "the real tree is untouched");
+    }
+
+    #[test]
+    fn dependency_dirs_are_left_out_even_without_a_gitignore() {
+        let tmp = TempDir::new();
+        // No .gitignore at all: the name alone is enough.
+        for p in 0..50 {
+            tmp.file(&format!("node_modules/pkg{p:02}/index.js"), b"x");
+        }
+        tmp.file(".venv/lib/site.py", b"x")
+            .file("src/main.rs", b"fn main() {}");
+        let t = scan(tmp.path());
+
+        assert!(t
+            .dirs
+            .iter()
+            .all(|d| !matches!(d.name.as_str(), "node_modules" | ".venv")
+                && !d.name.starts_with("pkg")));
+        assert_eq!(t.skipped, 2, "each skipped directory counts once");
+        assert_eq!(t.entry_count(), 2, "only src/ and main.rs are recorded");
+        assert!(!t.truncated);
+    }
+
+    #[test]
+    fn lock_files_are_left_out_but_manifests_and_lookalikes_stay() {
+        let tmp = TempDir::new();
+        tmp.file("package.json", b"{}")
+            .file("package-lock.json", &vec![b'x'; 300_000])
+            .file("yarn.lock", b"x")
+            .file("Cargo.toml", b"")
+            .file("Cargo.lock", b"x")
+            .file("package-lock.json.bak", b"x")
+            .file("node_modules_old/a.js", b"x");
+        let t = scan(tmp.path());
+
+        let names: Vec<&str> = t.dirs[0].files.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["Cargo.toml", "package-lock.json.bak", "package.json"]
+        );
+        assert_eq!(t.skipped, 3);
+        find_dir(&t, "node_modules_old");
+    }
+
+    #[test]
+    fn build_output_dirs_are_left_out_only_when_gitignored() {
+        let tracked = TempDir::new();
+        tracked
+            .file("build/a.rs", b"x")
+            .file("target/b.rs", b"x")
+            .file("dist/c.js", b"x");
+        let t = scan(tracked.path());
+        for name in ["build", "target", "dist"] {
+            find_dir(&t, name);
+        }
+        assert_eq!(t.skipped, 0, "tracked folders are real source");
+
+        let ignored = TempDir::new();
+        ignored
+            .file(".gitignore", b"build/\ntarget/\n")
+            .file("build/a.rs", b"x")
+            .file("target/b.rs", b"x")
+            .file("dist/c.js", b"x");
+        let t = scan(ignored.path());
+        assert!(t
+            .dirs
+            .iter()
+            .all(|d| d.name != "build" && d.name != "target"));
+        find_dir(&t, "dist");
+        assert_eq!(t.skipped, 2);
+    }
+
+    #[test]
+    fn skipped_entries_do_not_eat_the_entry_cap() {
+        let tmp = TempDir::new();
+        for i in 0..(MAX_ENTRIES + 500) {
+            tmp.file(&format!("node_modules/f{i:05}.js"), b"");
+        }
+        for i in 0..10 {
+            tmp.file(&format!("src/f{i}.rs"), b"");
+        }
+        let t = scan(tmp.path());
+        assert_eq!(t.entry_count(), 11, "src/ and its ten files");
+        assert!(!t.truncated);
+        assert_eq!(t.skipped, 1);
     }
 }

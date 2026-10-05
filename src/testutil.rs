@@ -142,7 +142,7 @@ pub fn snapshot(root: &Path) -> Vec<String> {
 /// a `.git`, ignored dirs/files, a symlink and a few differently sized files.
 pub fn sample_project() -> TempDir {
     let tmp = TempDir::new();
-    tmp.file(".gitignore", b"target/\n*.log\n.env\n")
+    tmp.file(".gitignore", b"private/\n*.log\n.env\n")
         .file(".git/HEAD", b"ref: refs/heads/main\n")
         .file(".git/objects/aa/bb", b"object")
         .file("src/main.rs", &vec![b'x'; 5000])
@@ -154,7 +154,7 @@ pub fn sample_project() -> TempDir {
         .file("assets/bundle.tar.gz", &vec![1u8; 300_000])
         .file("config/app.toml", b"a = 1")
         .file("config/app.json", b"{}")
-        .file("target/debug/app", &vec![7u8; 2_000_000])
+        .file("private/inner/app", &vec![7u8; 2_000_000])
         .file(".env", b"SECRET=1")
         .file("run.log", b"log")
         .file("Makefile", b"all:");
