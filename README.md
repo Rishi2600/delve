@@ -58,6 +58,40 @@ cargo run -- path/to/dir                   # or straight through cargo
 
 The terminal is restored on normal exit, on errors **and on panic**.
 
+## Use as a library
+
+The same package is also a Rust library, imported as `dungeon_delve`: scan a folder, generate its dungeon and play
+it from your own code, with your own frontend. For the engine alone, without the terminal UI and its dependencies,
+turn default features off:
+
+```toml
+[dependencies]
+dungeon-delve = { version = "0.2", default-features = false }
+```
+
+```rust
+use std::time::SystemTime;
+use dungeon_delve::game::{Action, Game};
+use dungeon_delve::{mapgen, scan};
+
+let root = std::path::Path::new("some/project").canonicalize()?;
+let tree = scan::scan(&root);                                     // read-only walk
+let level = mapgen::build_level(&tree, mapgen::seed_for_path(&root));
+print!("{}", level.to_ascii());                                   // what --dump prints
+
+let mut game = Game::new(level, SystemTime::now());
+game.act(Action::Move(1, 0));                                     // step east (or attack)
+println!("{} turns, {} files slain", game.summary().turns, game.summary().files_slain);
+```
+
+| Feature         | Default | Adds                                                                       |
+|-----------------|---------|----------------------------------------------------------------------------|
+| `tui`           | yes     | `dungeon_delve::tui::play`, the terminal game as a function (ratatui, crossterm) |
+| `cli`           | yes     | the `delve` command itself (`tui` plus clap)                               |
+
+The full API is documented on [docs.rs](https://docs.rs/dungeon-delve). The library is pre-1.0, so a minor
+release (0.2 to 0.3) may still change the API.
+
 ## Controls
 
 | Key                        | Action                                                          |
@@ -326,12 +360,15 @@ What the tests pin down:
 ## Layout
 
 ```
-src/main.rs      CLI, terminal setup and teardown (panic-safe), event loop
+src/lib.rs       library root: crate docs, modules, features
+src/main.rs      the `delve` command: argument parsing, --dump
+src/tui.rs       terminal session: setup and teardown (panic-safe), event loop, end report
 src/scan.rs      read-only walker: Tree, gitignore classification, caps
 src/mapgen.rs    FNV-1a seeding, layout, corridors, secret doors, --dump rendering
 src/entities.rs  classes, size tiers, loot, player
 src/game.rs      turns, combat, XP, monster AI, search, fog of war
 src/ui.rs        ratatui rendering and key handling
+src/tests.rs     whole-session tests (read-only guarantee, winnability bot)
 DEVLOG.md        what was built, in order, and why
 ```
 

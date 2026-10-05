@@ -234,3 +234,22 @@ entry cap. 85 tests pass, clippy clean. The README sample dump was regenerated f
 - `.github/workflows/release.yml` builds and attaches a Linux x86_64 tarball (plus sha256) to a GitHub release on every `v*` tag.
   Linux only, because that is all that has been tested.
 - README gained Install and License sections and a note that only Linux has been tested.
+
+## 0.2.0: library and binary in one package
+
+- `src/lib.rs` makes the package a library too, imported as `dungeon_delve`, with crate docs and a doc-tested example.
+  The engine (`scan`, `mapgen`, `entities`, `game`) is public; `main.rs` is now only argument parsing and `--dump`.
+- The terminal session (raw mode, alternate screen, panic-safe restore, event loop, end report) moved from `main.rs` into a
+  public `tui` module: `tui::play(game, color)` and `tui::report(&game)`. The panic hook is now installed once, however many
+  sessions a library user plays. `ui.rs` stays private.
+- Features: `tui` (ratatui + crossterm) and `cli` (`tui` + clap), both default; the `delve` binary has
+  `required-features = ["cli"]`. With `default-features = false` the library depends only on `ignore`, `rand` and
+  `rand_chacha`, checked from a throwaway outside crate.
+- Public API kept small, because every public item is a promise: balance formulas, loot rolls (which would put `rand` in
+  the API), the `room_map`/`NO_ROOM` internals, raw `tiles`, the fog-of-war vectors, setters and constructors are now
+  `pub(crate)`. Data types and enums are `#[non_exhaustive]`, so fields and variants can be added without a breaking
+  release. `#![warn(missing_docs)]` is on and every public item is documented; `cargo doc` is clean with `-D warnings`.
+- Tests: the two whole-session tests moved from `main.rs` to `src/tests.rs` (they only use the engine); the CLI error test
+  no longer needs `testutil`. 85 tests plus 2 doc tests; 69 tests run without default features. Dumps for seeds
+  1, 42 and 999 are byte-identical to the published 0.1.0 binary.
+- The release workflow now also runs `cargo fmt --check`, clippy with `-D warnings`, and the engine-only tests.

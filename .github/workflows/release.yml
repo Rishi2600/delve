@@ -20,8 +20,17 @@ jobs:
           version=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
           test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != crate v$version"; exit 1; }
 
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets -- -D warnings
+
       - name: Test
         run: cargo test --locked
+
+      - name: Library builds without the terminal UI
+        run: cargo test --locked --lib --no-default-features
 
       - name: Build
         run: cargo build --release --locked
