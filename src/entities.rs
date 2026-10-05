@@ -8,15 +8,19 @@ use rand::{Rng, RngExt};
 /// A tile coordinate on the level grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord)]
 pub struct Pos {
+    /// Column, growing to the right.
     pub x: i32,
+    /// Row, growing downwards.
     pub y: i32,
 }
 
 impl Pos {
+    /// The position at column `x`, row `y`.
     pub const fn new(x: i32, y: i32) -> Pos {
         Pos { x, y }
     }
 
+    /// The position `dx` columns and `dy` rows away.
     pub const fn offset(self, dx: i32, dy: i32) -> Pos {
         Pos::new(self.x + dx, self.y + dy)
     }
@@ -33,15 +37,19 @@ impl Pos {
 
 /// How often a class acts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Speed {
     /// Two actions per turn.
     Fast,
+    /// One action per turn.
     Normal,
     /// One action every other turn.
     Slow,
 }
 
+/// A monster's kind, decided by its file's extension (see [`Class::for_file_name`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Class {
     /// `.rs` — armored.
     Crab,
@@ -95,6 +103,7 @@ impl Class {
             .unwrap_or(Class::Slime)
     }
 
+    /// The map character for this class, as in the `--dump` legend.
     pub fn glyph(self) -> char {
         match self {
             Class::Crab => 'C',
@@ -108,6 +117,7 @@ impl Class {
         }
     }
 
+    /// Lower-case display name, e.g. `"crab"`.
     pub fn name(self) -> &'static str {
         match self {
             Class::Crab => "crab",
@@ -121,6 +131,7 @@ impl Class {
         }
     }
 
+    /// How often this class acts.
     pub fn speed(self) -> Speed {
         match self {
             Class::Snake => Speed::Fast,
@@ -138,6 +149,7 @@ impl Class {
         }
     }
 
+    /// Ghosts walk through walls.
     pub fn passes_walls(self) -> bool {
         self == Class::Ghost
     }
@@ -171,7 +183,9 @@ impl Class {
 const KIB: u64 = 1024;
 const MIB: u64 = 1024 * KIB;
 
+/// How strong a monster is, from its file's size (see [`size_tier`]). Ordered weakest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum SizeTier {
     /// < 1 KiB
     Rat,
@@ -200,10 +214,11 @@ pub fn size_tier(size: u64) -> SizeTier {
 }
 
 impl SizeTier {
-    pub fn index(self) -> i32 {
+    pub(crate) fn index(self) -> i32 {
         self as i32
     }
 
+    /// Display adjective, e.g. `"sturdy"`.
     pub fn adjective(self) -> &'static str {
         match self {
             SizeTier::Rat => "tiny",
@@ -229,7 +244,7 @@ impl SizeTier {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Stats {
+pub(crate) struct Stats {
     pub hp: i32,
     pub atk: i32,
     pub def: i32,
@@ -239,7 +254,7 @@ pub struct Stats {
 /// Combine tier and class (and the secret-room bonus) into final stats.
 /// Monsters from secret rooms (`hidden`) are tougher: +50% HP, +2 attack,
 /// double XP.
-pub fn monster_stats(class: Class, tier: SizeTier, hidden: bool) -> Stats {
+pub(crate) fn monster_stats(class: Class, tier: SizeTier, hidden: bool) -> Stats {
     let (hp, atk, xp) = tier.base();
     let mut hp = (hp * class.hp_percent() / 100).max(1);
     let mut atk = atk;
@@ -264,7 +279,9 @@ pub fn monster_stats(class: Class, tier: SizeTier, hidden: bool) -> Stats {
 const WEEK: Duration = Duration::from_secs(7 * 24 * 3600);
 const YEAR: Duration = Duration::from_secs(365 * 24 * 3600);
 
+/// How a monster behaves until it notices you, from its file's modification time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MonsterState {
     /// Untouched for a year or more: wakes when you come within 3 tiles.
     Asleep,
@@ -275,7 +292,7 @@ pub enum MonsterState {
 }
 
 /// Pick the starting state from a file's modification time.
-pub fn initial_state(modified: Option<SystemTime>, now: SystemTime) -> MonsterState {
+pub(crate) fn initial_state(modified: Option<SystemTime>, now: SystemTime) -> MonsterState {
     let Some(modified) = modified else {
         return MonsterState::Idle;
     };
@@ -296,43 +313,65 @@ pub fn initial_state(modified: Option<SystemTime>, now: SystemTime) -> MonsterSt
 
 /// What the map generator knows about a file.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct FileInfo {
+    /// File name, without the directory.
     pub name: String,
+    /// Size in bytes.
     pub size: u64,
+    /// Last modification time, when the filesystem reports one.
     pub modified: Option<SystemTime>,
 }
 
 /// A monster placement decided by the map generator.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Spawn {
+    /// Where the monster starts.
     pub pos: Pos,
+    /// The file it stands for.
     pub file: FileInfo,
     /// Lives in a secret room (ignored entry): tougher, better loot.
     pub hidden: bool,
 }
 
 impl Spawn {
+    /// Its class, from the file's extension.
     pub fn class(&self) -> Class {
         Class::for_file_name(&self.file.name)
     }
 
+    /// Its size tier, from the file's size.
     pub fn tier(&self) -> SizeTier {
         size_tier(self.file.size)
     }
 }
 
+/// A monster in play. Each one stands for a real file.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Monster {
+    /// The file it stands for.
     pub file: FileInfo,
+    /// Its class, from the file's extension.
     pub class: Class,
+    /// Its size tier, from the file's size.
     pub tier: SizeTier,
+    /// Where it is now.
     pub pos: Pos,
+    /// Current hit points.
     pub hp: i32,
+    /// Hit points when unhurt.
     pub max_hp: i32,
+    /// Attack strength.
     pub atk: i32,
+    /// Defense (damage taken is reduced by this plus class armor).
     pub def: i32,
+    /// XP the player earns for killing it.
     pub xp: u32,
+    /// Asleep, idle or hunting.
     pub state: MonsterState,
+    /// Lives in a secret room (ignored entry): tougher, better loot.
     pub hidden: bool,
     /// A mimic that still looks like an item.
     pub disguised: bool,
@@ -341,7 +380,7 @@ pub struct Monster {
 }
 
 impl Monster {
-    pub fn from_spawn(spawn: &Spawn, now: SystemTime) -> Monster {
+    pub(crate) fn from_spawn(spawn: &Spawn, now: SystemTime) -> Monster {
         let class = spawn.class();
         let tier = spawn.tier();
         let stats = monster_stats(class, tier, spawn.hidden);
@@ -377,7 +416,9 @@ impl Monster {
 // Items and loot
 // ---------------------------------------------------------------------------
 
+/// What an item does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ItemKind {
     /// Heals `power` HP.
     Potion,
@@ -389,14 +430,20 @@ pub enum ItemKind {
     Armor,
 }
 
+/// A potion, scroll or piece of gear, named after the file that dropped it.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Item {
+    /// Display name, e.g. `Blade of main.rs`.
     pub name: String,
+    /// What it does.
     pub kind: ItemKind,
+    /// How much it heals or adds (see [`ItemKind`]).
     pub power: i32,
 }
 
 impl ItemKind {
+    /// The map character for this kind of item.
     pub fn glyph(self) -> char {
         match self {
             ItemKind::Potion => '!',
@@ -418,7 +465,7 @@ impl ItemKind {
 
 /// Roll one item named after `file_name`. `quality` grows with the foe's
 /// tier (and secret rooms), improving the item's power.
-pub fn roll_item<R: Rng + ?Sized>(file_name: &str, quality: i32, rng: &mut R) -> Item {
+pub(crate) fn roll_item<R: Rng + ?Sized>(file_name: &str, quality: i32, rng: &mut R) -> Item {
     let kind = match rng.random_range(0..100) {
         0..=49 => ItemKind::Potion,
         50..=64 => ItemKind::Scroll,
@@ -441,7 +488,7 @@ pub fn roll_item<R: Rng + ?Sized>(file_name: &str, quality: i32, rng: &mut R) ->
 /// Loot dropped by a defeated monster. Every item is named after the file.
 /// Chest-monsters drop a lot; monsters from secret rooms always drop and
 /// drop better items.
-pub fn loot_for<R: Rng + ?Sized>(
+pub(crate) fn loot_for<R: Rng + ?Sized>(
     file_name: &str,
     class: Class,
     tier: SizeTier,
@@ -468,7 +515,7 @@ pub fn loot_for<R: Rng + ?Sized>(
 }
 
 /// Treasure lying around in a `.git` vault.
-pub fn vault_loot<R: Rng + ?Sized>(rng: &mut R) -> Vec<Item> {
+pub(crate) fn vault_loot<R: Rng + ?Sized>(rng: &mut R) -> Vec<Item> {
     (0..3).map(|_| roll_item(".git", 4, rng)).collect()
 }
 
@@ -479,22 +526,34 @@ pub fn vault_loot<R: Rng + ?Sized>(rng: &mut R) -> Vec<Item> {
 /// Inventory slots (one per letter a-z).
 pub const MAX_INVENTORY: usize = 26;
 
+/// The adventurer.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Player {
+    /// Where the player stands.
     pub pos: Pos,
+    /// Current hit points.
     pub hp: i32,
+    /// Hit points when unhurt.
     pub max_hp: i32,
+    /// Base attack, without the weapon.
     pub atk: i32,
+    /// Base defense, without the armor.
     pub def: i32,
+    /// Experience level, from 1.
     pub level: u32,
+    /// Total XP earned this run.
     pub xp: u32,
+    /// Carried items, at most [`MAX_INVENTORY`].
     pub inventory: Vec<Item>,
+    /// The equipped weapon.
     pub weapon: Option<Item>,
+    /// The equipped armor.
     pub armor: Option<Item>,
 }
 
 impl Player {
-    pub fn new(pos: Pos) -> Player {
+    pub(crate) fn new(pos: Pos) -> Player {
         Player {
             pos,
             hp: 50,
@@ -509,10 +568,12 @@ impl Player {
         }
     }
 
+    /// Attack including the equipped weapon.
     pub fn total_atk(&self) -> i32 {
         self.atk + self.weapon.as_ref().map_or(0, |w| w.power)
     }
 
+    /// Defense including the equipped armor.
     pub fn total_def(&self) -> i32 {
         self.def + self.armor.as_ref().map_or(0, |a| a.power)
     }
@@ -523,7 +584,7 @@ impl Player {
     }
 
     /// Add XP and level up as often as earned. Returns the levels gained.
-    pub fn gain_xp(&mut self, amount: u32) -> u32 {
+    pub(crate) fn gain_xp(&mut self, amount: u32) -> u32 {
         self.xp += amount;
         let mut gained = 0;
         while self.xp >= self.xp_for_next() {

@@ -39,53 +39,82 @@ const DIRS: [(i32, i32); 8] = [
     (-1, -1),
 ];
 
+/// How the run stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Outcome {
+    /// Still going.
     Playing,
+    /// The player's HP reached 0.
     Dead,
+    /// The player took the stairs out of the deepest room.
     Escaped,
+    /// The player quit.
     Quit,
 }
 
+/// Something the player does. Pass it to [`Game::act`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Action {
     /// Step (or attack) in a direction.
     Move(i32, i32),
+    /// Let one turn pass.
     Wait,
     /// Search the eight surrounding tiles for secret doors.
     Search,
     /// Use or equip the inventory item at this index.
     Use(usize),
+    /// End the run now.
     Quit,
 }
 
 /// What the end screen reports.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Summary {
+    /// Rooms entered at least once.
     pub rooms_explored: usize,
+    /// Rooms in the level.
     pub rooms_total: usize,
+    /// Monsters killed.
     pub files_slain: u32,
     /// Name and size of the biggest foe defeated.
     pub biggest_foe: Option<(String, u64)>,
     /// The real path of the room you ended the run in.
     pub final_path: PathBuf,
+    /// What killed the player, if they died.
     pub killer: Option<String>,
+    /// Secret doors found.
     pub secrets_found: u32,
+    /// Turns played.
     pub turns: u32,
+    /// The player's final experience level.
     pub level: u32,
 }
 
+/// A game in progress: the level, the player, the monsters and everything that has happened.
+///
+/// Create one with [`Game::new`], drive it with [`Game::act`], and read its
+/// fields to draw it. Nothing here touches the filesystem.
 pub struct Game {
+    /// The dungeon. Secret doors become doors here once found.
     pub level: Level,
+    /// The player.
     pub player: Player,
+    /// Monsters still alive.
     pub monsters: Vec<Monster>,
+    /// Items lying on the floor.
     pub floor_items: Vec<(Pos, Item)>,
     /// Tiles ever seen (fog of war).
-    pub seen: Vec<bool>,
+    pub(crate) seen: Vec<bool>,
     /// Tiles in view right now.
-    pub visible: Vec<bool>,
+    pub(crate) visible: Vec<bool>,
+    /// The message log, oldest first.
     pub messages: Vec<String>,
+    /// Turns played so far.
     pub turn: u32,
+    /// Whether the run is still going.
     pub outcome: Outcome,
 
     rooms_visited: Vec<bool>,
@@ -105,6 +134,8 @@ pub struct Game {
 }
 
 impl Game {
+    /// Start a game on `level`. `now` decides which monsters are asleep, idle or
+    /// hunting, from how long ago their file was modified.
     pub fn new(level: Level, now: SystemTime) -> Game {
         let tiles = level.tiles.len();
         let monsters = level
@@ -149,18 +180,22 @@ impl Game {
             .then(|| (p.y * self.level.width + p.x) as usize)
     }
 
+    /// Is `p` in view right now?
     pub fn is_visible(&self, p: Pos) -> bool {
         self.idx(p).is_some_and(|i| self.visible[i])
     }
 
+    /// Has `p` ever been seen (fog of war)?
     pub fn is_seen(&self, p: Pos) -> bool {
         self.idx(p).is_some_and(|i| self.seen[i])
     }
 
+    /// Index into [`Game::monsters`] of the monster standing on `p`.
     pub fn monster_at(&self, p: Pos) -> Option<usize> {
         self.monsters.iter().position(|m| m.pos == p)
     }
 
+    /// The name of the portal (symlink) on `p`.
     pub fn portal_at(&self, p: Pos) -> Option<&str> {
         self.level
             .portals
@@ -179,6 +214,7 @@ impl Game {
         &self.level.rooms[self.current_room].path
     }
 
+    /// The run so far: rooms explored, files slain, the biggest foe and more.
     pub fn summary(&self) -> Summary {
         Summary {
             rooms_explored: self.rooms_visited.iter().filter(|&&v| v).count(),
@@ -700,7 +736,7 @@ impl Game {
 
     /// Recompute what is visible: a lit room is seen whole when you stand in
     /// it, everything else by line of sight within [`VIEW_RADIUS`].
-    pub fn update_view(&mut self) {
+    pub(crate) fn update_view(&mut self) {
         for &i in &self.visible_list {
             self.visible[i] = false;
         }

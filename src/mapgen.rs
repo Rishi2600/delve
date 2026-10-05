@@ -25,7 +25,7 @@ const MAX_ROOM_H: i32 = 13;
 /// Tiles of floor per monster, at most (keeps rooms from being packed solid).
 const AREA_PER_MONSTER: i32 = 10;
 /// Marker in `room_map` for tiles that belong to no room.
-pub const NO_ROOM: u32 = u32::MAX;
+pub(crate) const NO_ROOM: u32 = u32::MAX;
 
 // ---------------------------------------------------------------------------
 // Seeding
@@ -33,7 +33,7 @@ pub const NO_ROOM: u32 = u32::MAX;
 
 /// 64-bit FNV-1a, hand-written (never `DefaultHasher`, whose output is not
 /// stable across Rust versions).
-pub fn fnv1a64(bytes: &[u8]) -> u64 {
+pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
     const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
     const PRIME: u64 = 0x0000_0100_0000_01b3;
     let mut hash = OFFSET;
@@ -53,18 +53,25 @@ pub fn seed_for_path(canonical: &Path) -> u64 {
 // Level data
 // ---------------------------------------------------------------------------
 
+/// One map cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Tile {
     /// Solid rock; renders as nothing.
     Rock,
+    /// A room wall.
     Wall,
+    /// A room's floor.
     Floor,
     /// Floor of a sealed (unreadable) room.
     SealedFloor,
+    /// A passage between rooms.
     Corridor,
+    /// An open doorway.
     Door,
     /// Looks exactly like a wall until found with `s`.
     SecretDoor,
+    /// The way out, in the deepest room.
     Stairs,
 }
 
@@ -94,8 +101,11 @@ impl Tile {
     }
 }
 
+/// What kind of directory a room stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RoomKind {
+    /// An ordinary directory.
     Normal,
     /// The `.git` directory.
     Vault,
@@ -105,18 +115,26 @@ pub enum RoomKind {
     Cache,
 }
 
+/// A room: one directory on the map.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Room {
+    /// Index into [`Level::rooms`].
     pub id: usize,
+    /// What kind of directory it is.
     pub kind: RoomKind,
     /// Directory name (or `(hidden) name` for a cache).
     pub name: String,
     /// The real path of the directory this room stands for.
     pub path: PathBuf,
-    /// Interior rectangle (walls are one tile outside it).
+    /// Left column of the interior. The walls are one tile outside the
+    /// interior rectangle `x, y, w, h`.
     pub x: i32,
+    /// Top row of the interior.
     pub y: i32,
+    /// Interior width in tiles.
     pub w: i32,
+    /// Interior height in tiles.
     pub h: i32,
     /// Scan depth of the directory.
     pub depth: u32,
@@ -129,10 +147,12 @@ pub struct Room {
 }
 
 impl Room {
+    /// The middle of the interior.
     pub fn center(&self) -> Pos {
         Pos::new(self.x + self.w / 2, self.y + self.h / 2)
     }
 
+    /// Is `p` inside the interior (walls excluded)?
     pub fn contains(&self, p: Pos) -> bool {
         p.x >= self.x && p.x < self.x + self.w && p.y >= self.y && p.y < self.y + self.h
     }
@@ -151,25 +171,40 @@ impl Room {
 
 /// A symlink: shows only its name, never followed.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Portal {
+    /// Where it stands.
     pub pos: Pos,
+    /// The symlink's name.
     pub name: String,
 }
 
+/// A generated dungeon: tiles, rooms, and where everything starts.
+///
+/// Built by [`build_level`]. Same tree and seed, same level.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Level {
+    /// Map width in tiles.
     pub width: i32,
+    /// Map height in tiles.
     pub height: i32,
-    pub tiles: Vec<Tile>,
+    pub(crate) tiles: Vec<Tile>,
     /// Room id per tile (interior *and* walls), or [`NO_ROOM`].
-    pub room_map: Vec<u32>,
+    pub(crate) room_map: Vec<u32>,
+    /// One room per directory; `rooms[0]` is the root.
     pub rooms: Vec<Room>,
+    /// Where the player starts.
     pub start: Pos,
+    /// Where the stairs out are.
     pub stairs: Pos,
+    /// Monsters to place, one per kept file.
     pub spawns: Vec<Spawn>,
     /// Items lying on the floor at generation time (vault treasure).
     pub items: Vec<(Pos, Item)>,
+    /// Symlinks, shown as portals.
     pub portals: Vec<Portal>,
+    /// The seed the level was built from.
     pub seed: u64,
 }
 
@@ -182,6 +217,7 @@ impl Level {
         }
     }
 
+    /// Is `p` on the map?
     pub fn in_bounds(&self, p: Pos) -> bool {
         self.index(p).is_some()
     }
@@ -191,7 +227,7 @@ impl Level {
         self.index(p).map_or(Tile::Rock, |i| self.tiles[i])
     }
 
-    pub fn set_tile(&mut self, p: Pos, t: Tile) {
+    pub(crate) fn set_tile(&mut self, p: Pos, t: Tile) {
         if let Some(i) = self.index(p) {
             self.tiles[i] = t;
         }

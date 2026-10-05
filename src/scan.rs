@@ -4,7 +4,7 @@
 //! entries first) and produces a [`Tree`]. Entries matched by gitignore rules
 //! are *classified* (`ignored = true`), never skipped: the map generator turns
 //! them into secret rooms. The one exception is bulk the game has no use for
-//! (dependency folders, caches, lock files, see [`is_bulk`]): those are left
+//! (dependency folders, caches, lock files, see `is_bulk`): those are left
 //! out of the dungeon altogether.
 //!
 //! This module only ever calls `read_dir`, `symlink_metadata` and reads
@@ -23,14 +23,14 @@ pub const MAX_ENTRIES: usize = 2000;
 pub const MAX_DEPTH: u32 = 6;
 /// Entries recorded per ignored directory, so `node_modules/` cannot eat the
 /// whole budget and starve the rest of the dungeon.
-pub const IGNORED_DIR_ENTRY_CAP: usize = 48;
+pub(crate) const IGNORED_DIR_ENTRY_CAP: usize = 48;
 /// Entries recorded in total across everything ignored. Secret areas stay a
 /// handful of rooms instead of a maze, and the real tree keeps the rest of
 /// the [`MAX_ENTRIES`] budget.
-pub const MAX_IGNORED_ENTRIES: usize = 300;
+pub(crate) const MAX_IGNORED_ENTRIES: usize = 300;
 /// Ignored *directories* recorded in total. Every directory is a room, so this
 /// is what actually bounds the size of the secret areas.
-pub const MAX_IGNORED_DIRS: usize = 24;
+pub(crate) const MAX_IGNORED_DIRS: usize = 24;
 
 /// Installed dependencies, caches and tool output. Huge, machine-made and never
 /// worth playing in, so they are left out of the dungeon whether or not
@@ -87,6 +87,7 @@ fn is_bulk(name: &str, is_dir: bool, ignored: bool) -> bool {
 
 /// What kind of room a directory becomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DirKind {
     /// An ordinary, readable directory.
     Normal,
@@ -98,15 +99,21 @@ pub enum DirKind {
 
 /// The metadata of a file that the game cares about.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Meta {
+    /// Size in bytes.
     pub size: u64,
+    /// Last modification time, when the filesystem reports one.
     pub modified: Option<SystemTime>,
 }
 
 /// A file (or symlink "portal") inside a directory.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct FileNode {
+    /// File name, without the directory.
     pub name: String,
+    /// Size and modification time.
     pub metadata: Meta,
     /// Matched by gitignore rules (or lives inside an ignored directory).
     pub ignored: bool,
@@ -116,15 +123,21 @@ pub struct FileNode {
 
 /// A directory in the scanned tree.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct DirNode {
+    /// Index into [`Tree::dirs`] of the parent directory (`None` for the root).
     pub parent: Option<usize>,
+    /// Directory name.
     pub name: String,
+    /// The directory's real path.
     pub path: PathBuf,
     /// Depth below the root (the root is 0).
     pub depth: u32,
+    /// Whether it is an ordinary, vault or sealed room.
     pub kind: DirKind,
     /// Matched by gitignore rules (or lives inside an ignored directory).
     pub ignored: bool,
+    /// Files directly inside it, sorted by name.
     pub files: Vec<FileNode>,
     /// Child directory ids, sorted by name.
     pub children: Vec<usize>,
@@ -132,7 +145,9 @@ pub struct DirNode {
 
 /// The scanned directory tree. `dirs[0]` is always the root.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Tree {
+    /// Every recorded directory; `dirs[0]` is the root.
     pub dirs: Vec<DirNode>,
     /// True if a cap (entries or per-ignored-dir) cut the scan short.
     pub truncated: bool,
