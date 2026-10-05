@@ -9,6 +9,8 @@ delve [path]        # default: the current directory
 Every directory becomes a room, every file becomes a monster, and everything your `.gitignore`
 hides becomes a secret room. The same folder always produces the same dungeon.
 
+**New here?** The [usage guide](doc/USAGE.md) covers installing, playing and using the library step by step.
+
 **Strictly read-only.** `delve` only ever reads your filesystem. Killing and looting happen in game
 state only; nothing is created, modified, touched or deleted (a test checks this, see
 [Testing](#testing)).
