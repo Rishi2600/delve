@@ -64,12 +64,14 @@ The terminal is restored on normal exit, on errors **and on panic**.
 
 The same package is also a Rust library, imported as `dungeon_delve`: scan a folder, generate its dungeon and play
 it from your own code, with your own frontend. For the engine alone, without the terminal UI and its dependencies,
-turn default features off:
+turn default features off. Inside your own Rust project, run:
 
-```toml
-[dependencies]
-dungeon-delve = { version = "0.2", default-features = false }
+```sh
+cargo add dungeon-delve --no-default-features
 ```
+
+That adds `dungeon-delve = { version = "0.2.0", default-features = false }` to your `Cargo.toml`. Use `cargo add`,
+not `cargo install`: `cargo install` installs only the `delve` command.
 
 ```rust
 use std::time::SystemTime;

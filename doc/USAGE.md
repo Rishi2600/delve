@@ -139,13 +139,25 @@ with your own frontend (a web page, a bot, a different TUI). The full API refere
 
 ### Add it
 
-```toml
-[dependencies]
-# Engine only: no terminal libraries are pulled in.
-dungeon-delve = { version = "0.2", default-features = false }
+The library is a dependency of your own Rust project, like an npm package. Inside your project, run:
+
+```sh
+cargo add dungeon-delve --no-default-features    # engine only: no terminal libraries are pulled in
 ```
 
-In code the library is called `dungeon_delve`, with an underscore.
+That is the Rust version of `npm install <package>`. It adds this line to your `Cargo.toml`, which you can also
+write by hand:
+
+```toml
+[dependencies]
+dungeon-delve = { version = "0.2.0", default-features = false }
+```
+
+The next `cargo build` downloads and compiles it. In code the library is called `dungeon_delve`, with an
+underscore.
+
+Do not use `cargo install` for this. `cargo install` only installs commands (like `npm install -g`). It installs
+the `delve` game, not the library.
 
 | Feature | On by default | What it adds |
 |---|---|---|
@@ -153,8 +165,8 @@ In code the library is called `dungeon_delve`, with an underscore.
 | `tui` | yes | The `tui` module: the terminal game as a function (pulls in ratatui and crossterm) |
 | `cli` | yes | Everything the `delve` command needs (`tui` plus clap). Library users do not need it. |
 
-To embed the terminal game without the command-line parts:
-`dungeon-delve = { version = "0.2", default-features = false, features = ["tui"] }`.
+To embed the terminal game without the command-line parts, run
+`cargo add dungeon-delve --no-default-features --features tui`.
 
 ### How it fits together
 
