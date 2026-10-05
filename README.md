@@ -13,9 +13,34 @@ hides becomes a secret room. The same folder always produces the same dungeon.
 state only; nothing is created, modified, touched or deleted (a test checks this, see
 [Testing](#testing)).
 
+## Install
+
+`delve` is developed and tested on **Linux** only. macOS will probably work (it uses only `crossterm` and
+the standard library), but it has not been tried, and Windows is untested as well. It needs Rust 1.89 or newer.
+The package is called `dungeon-delve` (the name `delve` was already taken on crates.io), and the command it
+installs is `delve`.
+
+```sh
+cargo install dungeon-delve                                    # from crates.io
+cargo install --git https://github.com/Rishi2600/delve         # straight from GitHub
+```
+
+Prebuilt Linux x86_64 binaries are attached to each
+[GitHub release](https://github.com/Rishi2600/delve/releases): download, unpack and put `delve` on your `PATH`.
+No Rust is needed for that route.
+
+Then point it at any folder; it only reads:
+
+```sh
+delve                  # the current folder becomes the dungeon
+delve ~/code/some-project
+delve --seed 42 .      # a different layout
+delve --dump .         # print the map without the game
+```
+
 ## Build and run
 
-Requires stable Rust (edition 2021).
+To work on `delve` itself, clone the repository and build with stable Rust 1.89 or newer (edition 2021).
 
 ```sh
 cargo build --release
@@ -296,7 +321,7 @@ What the tests pin down:
 
 - A directory with hundreds of sibling subdirectories makes a very tall map (one row per leaf room).
 - The scan is a snapshot at start-up; changes to the directory while you play are not seen.
-- Developed and tested on Linux. The tests use Unix permissions and symlinks, so they are Unix-only.
+- Developed and tested on Linux only. The tests use Unix permissions and symlinks, so they are Unix-only; macOS and Windows are untried.
 
 ## Layout
 
@@ -309,3 +334,14 @@ src/game.rs      turns, combat, XP, monster AI, search, fog of war
 src/ui.rs        ratatui rendering and key handling
 DEVLOG.md        what was built, in order, and why
 ```
+
+## License
+
+Licensed under either of
+
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT license](LICENSE-MIT)
+
+at your option. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion
+in this project, as defined in the Apache-2.0 license, is dual licensed as above, without any additional terms
+or conditions.
