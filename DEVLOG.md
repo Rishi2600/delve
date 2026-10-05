@@ -222,3 +222,15 @@ entry cap. 85 tests pass, clippy clean. The README sample dump was regenerated f
 - **Known limitations:** a directory with hundreds of sibling subdirectories makes a very tall map (e.g. the cargo registry is
   64×9063); the scan is a start-up snapshot; developed and tested on Linux only (tests use Unix permissions and symlinks).
 - **Deliverables:** `README.md` (build, controls, monster tables, sample `--dump`), this `DEVLOG.md`, the source, and the tests.
+
+## Going public
+
+- Repo `Rishi2600/delve` made public; `origin` repointed from the old `LearnIt.git` URL to `https://github.com/Rishi2600/delve.git`.
+- History kept as is (the old project's commits stay). A scan found no real secrets in it; the only hit is Grafana's default
+  `admin` password in the old `docker-compose.yml`, which crates.io does not care about.
+- Licensed `MIT OR Apache-2.0` (`LICENSE-MIT`, `LICENSE-APACHE`).
+- Crate name: `delve` is taken on crates.io, so the package is `dungeon-delve` with `[[bin]] name = "delve"`; the command is unchanged.
+  `rust-version = "1.89"`, checked by running all 85 tests on a 1.89.0 toolchain. `cargo publish --dry-run` passes.
+- `.github/workflows/release.yml` builds and attaches a Linux x86_64 tarball (plus sha256) to a GitHub release on every `v*` tag.
+  Linux only, because that is all that has been tested.
+- README gained Install and License sections and a note that only Linux has been tested.
